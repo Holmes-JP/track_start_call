@@ -1,4 +1,5 @@
-﻿import 'dart:math';
+import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,48 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const StartCallApp());
+}
+
+// Phase color definitions with gradients
+class PhaseColors {
+  static const ready = Color(0xFF6BCB1F);
+  static const readySecondary = Color(0xFF4CAF50);
+  static const onYourMarks = Color(0xFFFFB800);
+  static const onYourMarksSecondary = Color(0xFFFF9500);
+  static const set = Color(0xFFFF6B35);
+  static const setSecondary = Color(0xFFFF4757);
+  static const go = Color(0xFFFF3366);
+  static const goSecondary = Color(0xFFE91E63);
+
+  static Color getPrimaryColor(String phase) {
+    switch (phase) {
+      case 'Ready':
+        return ready;
+      case 'On Your Marks':
+        return onYourMarks;
+      case 'Set':
+        return set;
+      case 'Go':
+        return go;
+      default:
+        return ready;
+    }
+  }
+
+  static Color getSecondaryColor(String phase) {
+    switch (phase) {
+      case 'Ready':
+        return readySecondary;
+      case 'On Your Marks':
+        return onYourMarksSecondary;
+      case 'Set':
+        return setSecondary;
+      case 'Go':
+        return goSecondary;
+      default:
+        return readySecondary;
+    }
+  }
 }
 
 class StartCallApp extends StatelessWidget {
@@ -86,7 +129,9 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
   bool _isFinished = false;
   String _phaseLabel = 'Track Start Call';
   double _remainingSeconds = 0;
+  double _phaseStartSeconds = 0;
   int _runToken = 0;
+  List<Color> _completedPhaseColors = [];
 
   @override
   void initState() {
@@ -196,6 +241,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     const tick = Duration(milliseconds: 50);
     var remaining = seconds;
     setState(() {
+      _phaseStartSeconds = seconds;
       _remainingSeconds = remaining;
     });
 
@@ -271,7 +317,14 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
       _isPaused = false;
       _isFinished = false;
       _phaseLabel = 'Ready';
+      _completedPhaseColors = [];
     });
+
+    // Phase colors
+    const readyColor = Color(0xFF6BCB1F);
+    const onYourMarksColor = Color(0xFFFFB800);
+    const setColor = Color(0xFFFF6B35);
+    const goColor = Color(0xFFFF3366);
 
     final onDelay = _getDelay(
       random: _randomOn,
@@ -299,6 +352,9 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     if (!onOk) {
       return;
     }
+    setState(() {
+      _completedPhaseColors = [..._completedPhaseColors, readyColor];
+    });
 
     final setOk = await _runPhase(
       runId: runId,
@@ -309,6 +365,9 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     if (!setOk) {
       return;
     }
+    setState(() {
+      _completedPhaseColors = [..._completedPhaseColors, onYourMarksColor];
+    });
 
     final panOk = await _runPhase(
       runId: runId,
@@ -319,6 +378,9 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     if (!panOk) {
       return;
     }
+    setState(() {
+      _completedPhaseColors = [..._completedPhaseColors, setColor];
+    });
 
     if (!mounted || runId != _runToken) {
       return;
@@ -330,6 +392,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
       _isFinished = true;
       _phaseLabel = 'Go';
       _remainingSeconds = 0;
+      _completedPhaseColors = [..._completedPhaseColors, goColor];
     });
   }
 
@@ -361,6 +424,8 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
       _isFinished = false;
       _phaseLabel = 'Track Start Call';
       _remainingSeconds = 0;
+      _phaseStartSeconds = 0;
+      _completedPhaseColors = [];
     });
   }
 
@@ -600,6 +665,98 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     );
   }
 
+  Widget _buildGlowingText(
+    String text,
+    TextStyle style, {
+    Color? glowColor,
+  }) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // Glow layer
+        if (glowColor != null)
+          Text(
+            text,
+            style: style.copyWith(
+              foreground: Paint()
+                ..color = glowColor
+                ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+            ),
+          ),
+        // Main text
+        Text(text, style: style),
+      ],
+    );
+  }
+
+  Widget _buildGlowButton({
+    required VoidCallback? onPressed,
+    required String label,
+    required Color primaryColor,
+    required Color secondaryColor,
+    required bool filled,
+  }) {
+    final isEnabled = onPressed != null;
+    final opacity = isEnabled ? 1.0 : 0.4;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: isEnabled
+            ? [
+                BoxShadow(
+                  color: primaryColor.withOpacity(filled ? 0.4 : 0.2),
+                  blurRadius: 16,
+                  spreadRadius: filled ? 2 : 0,
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: filled
+                  ? LinearGradient(
+                      colors: [
+                        primaryColor.withOpacity(opacity),
+                        secondaryColor.withOpacity(opacity),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                  : null,
+              border: filled
+                  ? null
+                  : Border.all(
+                      color: primaryColor.withOpacity(opacity),
+                      width: 2,
+                    ),
+            ),
+            child: Center(
+              child: Text(
+                label,
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 2,
+                  color: filled
+                      ? const Color(0xFF0C1409).withOpacity(opacity)
+                      : primaryColor.withOpacity(opacity),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final countdownText = _remainingSeconds > 0
@@ -609,72 +766,27 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
         _phaseLabel.isNotEmpty && _phaseLabel != 'Track Start Call';
 
     return Scaffold(
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          const Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Color(0xFF0A0E0B),
-                    Color(0xFF111D14),
-                    Color(0xFF0B0F0C),
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: -120,
-            left: -80,
-            child: Container(
-              width: 260,
-              height: 260,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    Color(0x226BCB1F),
-                    Color(0x00000000),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: -140,
-            right: -60,
-            child: Container(
-              width: 300,
-              height: 300,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    Color(0x2237632D),
-                    Color(0x00000000),
-                  ],
-                ),
-              ),
-            ),
-          ),
           SafeArea(
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: Row(
                     children: [
                       IconButton(
                         onPressed: _openSettings,
-                      icon: const Icon(Icons.settings),
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xCC151B22),
-                        foregroundColor: const Color(0xFFE6FFD4),
+                        icon: const Icon(Icons.tune_rounded, size: 22),
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFF1A1A1A),
+                          foregroundColor: const Color(0xFFE6FFD4),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
                       ),
-                    ),
                       const Spacer(),
                     ],
                   ),
@@ -686,113 +798,137 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                       : LayoutBuilder(
                           builder: (context, constraints) {
                             final panelWidth =
-                                min(constraints.maxWidth * 0.75, 320.0);
-                            return Container(
-                              constraints: BoxConstraints(
-                                minWidth: panelWidth,
-                                maxWidth: panelWidth,
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(22),
-                                border: Border.all(
-                                  color: const Color(0xFF2A3543),
-                                ),
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xCC141B26),
-                                    Color(0xAA0F151E),
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      _phaseLabel,
-                                      textAlign: TextAlign.center,
-                                      style: GoogleFonts.bebasNeue(
-                                        textStyle: Theme.of(context)
-                                            .textTheme
-                                            .displaySmall
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w700,
-                                              letterSpacing: 0.6,
-                                              color:
-                                                  const Color(0xFFE6FFD4),
-                                            ),
-                                      ),
+                                min(constraints.maxWidth * 0.8, 340.0);
+                            final progress = _phaseStartSeconds > 0
+                                ? 1.0 - (_remainingSeconds / _phaseStartSeconds)
+                                : 0.0;
+
+                            final progressColor = PhaseColors.getPrimaryColor(_phaseLabel);
+                            final secondaryColor = PhaseColors.getSecondaryColor(_phaseLabel);
+
+                            return IntrinsicWidth(
+                              child: IntrinsicHeight(
+                                child: CustomPaint(
+                                  painter: RoundedRectProgressPainter(
+                                    progress: progress,
+                                    borderRadius: 24,
+                                    strokeWidth: 4,
+                                    progressColor: progressColor,
+                                    secondaryColor: secondaryColor,
+                                    backgroundColor: const Color(0xFF1A2332),
+                                    completedPhaseColors: _completedPhaseColors,
+                                  ),
+                                  child: Container(
+                                    constraints: BoxConstraints(
+                                      minWidth: panelWidth,
+                                      maxWidth: panelWidth,
                                     ),
-                                    if (showCountdown) ...[
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        '$countdownText s',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .headlineMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w600,
-                                              color:
-                                                  const Color(0xFF6BCB1F),
-                                            ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                      vertical: 20,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(24),
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          const Color(0xFF141B26).withOpacity(0.95),
+                                          const Color(0xFF0D1117).withOpacity(0.98),
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
                                       ),
-                                    ],
-                                  ],
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: progressColor.withOpacity(0.15),
+                                          blurRadius: 30,
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        // Phase label with glow
+                                        _buildGlowingText(
+                                          _phaseLabel,
+                                          GoogleFonts.bebasNeue(
+                                            fontSize: 42,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: 2,
+                                            color: const Color(0xFFE6FFD4),
+                                          ),
+                                          glowColor: progressColor.withOpacity(0.3),
+                                        ),
+                                        if (showCountdown) ...[
+                                          const SizedBox(height: 12),
+                                          // Countdown with gradient and glow - fixed width monospace
+                                          ShaderMask(
+                                            shaderCallback: (bounds) => LinearGradient(
+                                              colors: [progressColor, secondaryColor],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ).createShader(bounds),
+                                            child: _buildGlowingText(
+                                              countdownText,
+                                              GoogleFonts.robotoMono(
+                                                fontSize: 48,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.white,
+                                              ),
+                                              glowColor: progressColor.withOpacity(0.5),
+                                            ),
+                                          ),
+                                          Text(
+                                            'seconds',
+                                            style: GoogleFonts.spaceGrotesk(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                              color: progressColor.withOpacity(0.7),
+                                              letterSpacing: 3,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
                                 ),
+                              ),
                             );
                           },
                         ),
                 ),
               ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
                   child: Row(
                     children: [
                       Expanded(
-                      child: FilledButton(
-                        onPressed:
-                            _isRunning && !_isPaused ? null : _startSequence,
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 18),
-                            backgroundColor: const Color(0xFF6BCB1F),
-                            foregroundColor: const Color(0xFF0C1409),
-                          ),
-                          child: const Text('スタート'),
+                        child: _buildGlowButton(
+                          onPressed: _isRunning && !_isPaused ? null : _startSequence,
+                          label: 'START',
+                          primaryColor: PhaseColors.ready,
+                          secondaryColor: PhaseColors.readySecondary,
+                          filled: true,
                         ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _isPaused || _isFinished
-                          ? OutlinedButton(
-                              onPressed: _resetSequence,
-                              style: OutlinedButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 18),
-                                foregroundColor: const Color(0xFFE85C5C),
-                                side: const BorderSide(
-                                  color: Color(0xFFE85C5C),
-                                ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _isPaused || _isFinished
+                            ? _buildGlowButton(
+                                onPressed: _resetSequence,
+                                label: 'RESET',
+                                primaryColor: const Color(0xFFE85C5C),
+                                secondaryColor: const Color(0xFFFF6B6B),
+                                filled: false,
+                              )
+                            : _buildGlowButton(
+                                onPressed: _isRunning ? _pauseSequence : null,
+                                label: 'PAUSE',
+                                primaryColor: PhaseColors.ready,
+                                secondaryColor: PhaseColors.readySecondary,
+                                filled: false,
                               ),
-                              child: const Text('リセット'),
-                            )
-                          : OutlinedButton(
-                              onPressed: _isRunning ? _pauseSequence : null,
-                              style: OutlinedButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 18),
-                                foregroundColor: const Color(0xFF6BCB1F),
-                                side: const BorderSide(
-                                  color: Color(0xFF6BCB1F),
-                                ),
-                              ),
-                              child: const Text('一時停止'),
-                            ),
                       ),
                     ],
                   ),
@@ -803,5 +939,170 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
         ],
       ),
     );
+  }
+}
+
+class RoundedRectProgressPainter extends CustomPainter {
+  final double progress;
+  final double borderRadius;
+  final double strokeWidth;
+  final Color progressColor;
+  final Color secondaryColor;
+  final Color backgroundColor;
+  final Color glowColor;
+  final List<Color> completedPhaseColors;
+
+  RoundedRectProgressPainter({
+    required this.progress,
+    required this.borderRadius,
+    this.strokeWidth = 3.0,
+    this.progressColor = const Color(0xFF6BCB1F),
+    Color? secondaryColor,
+    this.backgroundColor = const Color(0xFF2A3543),
+    this.completedPhaseColors = const [],
+    Color? glowColor,
+  })  : secondaryColor = secondaryColor ?? progressColor,
+        glowColor = glowColor ?? progressColor.withOpacity(0.5);
+
+  Path _createPathFromTopCenter(Size size) {
+    final rect = Rect.fromLTWH(
+      strokeWidth / 2,
+      strokeWidth / 2,
+      size.width - strokeWidth,
+      size.height - strokeWidth,
+    );
+    final r = borderRadius;
+    final path = Path();
+
+    // Start from top center
+    path.moveTo(rect.left + rect.width / 2, rect.top);
+
+    // Top right (from center to corner)
+    path.lineTo(rect.right - r, rect.top);
+    path.arcToPoint(
+      Offset(rect.right, rect.top + r),
+      radius: Radius.circular(r),
+    );
+
+    // Right side
+    path.lineTo(rect.right, rect.bottom - r);
+    path.arcToPoint(
+      Offset(rect.right - r, rect.bottom),
+      radius: Radius.circular(r),
+    );
+
+    // Bottom side
+    path.lineTo(rect.left + r, rect.bottom);
+    path.arcToPoint(
+      Offset(rect.left, rect.bottom - r),
+      radius: Radius.circular(r),
+    );
+
+    // Left side
+    path.lineTo(rect.left, rect.top + r);
+    path.arcToPoint(
+      Offset(rect.left + r, rect.top),
+      radius: Radius.circular(r),
+    );
+
+    // Top left (from corner back to center)
+    path.lineTo(rect.left + rect.width / 2, rect.top);
+
+    return path;
+  }
+
+  void _drawProgressWithGlow(
+    Canvas canvas,
+    Path progressPath,
+    Color primary,
+    Color secondary,
+    Size size,
+  ) {
+    final bounds = progressPath.getBounds();
+
+    // Create gradient shader
+    final gradient = ui.Gradient.linear(
+      Offset(bounds.left, bounds.top),
+      Offset(bounds.right, bounds.bottom),
+      [primary, secondary, primary],
+      [0.0, 0.5, 1.0],
+    );
+
+    // Draw outer glow (largest, most diffuse)
+    final outerGlowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth + 12
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12)
+      ..color = primary.withOpacity(0.25);
+    canvas.drawPath(progressPath, outerGlowPaint);
+
+    // Draw middle glow
+    final midGlowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth + 6
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6)
+      ..color = primary.withOpacity(0.5);
+    canvas.drawPath(progressPath, midGlowPaint);
+
+    // Draw inner glow (brighter, tighter)
+    final innerGlowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth + 2
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3)
+      ..color = primary.withOpacity(0.8);
+    canvas.drawPath(progressPath, innerGlowPaint);
+
+    // Draw main progress line with gradient
+    final progressPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..shader = gradient;
+    canvas.drawPath(progressPath, progressPaint);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = _createPathFromTopCenter(size);
+
+    // Draw background with subtle inner shadow effect
+    final bgOuterGlow = Paint()
+      ..color = backgroundColor.withOpacity(0.2)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth + 8
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+    canvas.drawPath(path, bgOuterGlow);
+
+    final bgPaint = Paint()
+      ..color = backgroundColor.withOpacity(0.6)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+    canvas.drawPath(path, bgPaint);
+
+    // Draw completed phases (full circles)
+    for (final color in completedPhaseColors) {
+      _drawProgressWithGlow(canvas, path, color, color, size);
+    }
+
+    // Draw current progress
+    if (progress <= 0) return;
+
+    final pathMetrics = path.computeMetrics().first;
+    final totalLength = pathMetrics.length;
+    final progressLength = totalLength * progress.clamp(0.0, 1.0);
+    final extractedPath = pathMetrics.extractPath(0, progressLength);
+
+    _drawProgressWithGlow(canvas, extractedPath, progressColor, secondaryColor, size);
+  }
+
+  @override
+  bool shouldRepaint(RoundedRectProgressPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.progressColor != progressColor ||
+        oldDelegate.backgroundColor != backgroundColor ||
+        oldDelegate.completedPhaseColors.length != completedPhaseColors.length;
   }
 }
