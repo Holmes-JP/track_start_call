@@ -16,7 +16,7 @@ class StartCallApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final baseTheme = ThemeData(
       colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF4CC9A7),
+        seedColor: const Color(0xFF6BCB1F),
         brightness: Brightness.dark,
       ),
       useMaterial3: true,
@@ -26,7 +26,7 @@ class StartCallApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: '陸上スタートコール',
       theme: baseTheme.copyWith(
-        textTheme: GoogleFonts.notoSansJpTextTheme(baseTheme.textTheme),
+        textTheme: GoogleFonts.spaceGroteskTextTheme(baseTheme.textTheme),
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.transparent,
           elevation: 0,
@@ -34,11 +34,22 @@ class StartCallApp extends StatelessWidget {
         ),
         cardTheme: const CardThemeData(
           elevation: 0.5,
-          color: Color(0xFF1A232B),
-          surfaceTintColor: Color(0xFF1A232B),
+          color: Color(0xFF141B26),
+          surfaceTintColor: Color(0xFF141B26),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(16)),
           ),
+        ),
+        sliderTheme: const SliderThemeData(
+          trackHeight: 3,
+          activeTrackColor: Color(0xFF6BCB1F),
+          inactiveTrackColor: Color(0xFF26332A),
+          thumbColor: Color(0xFF6BCB1F),
+          overlayColor: Color(0x336BCB1F),
+        ),
+        switchTheme: const SwitchThemeData(
+          thumbColor: WidgetStatePropertyAll(Color(0xFF6BCB1F)),
+          trackColor: WidgetStatePropertyAll(Color(0xFF1D2B21)),
         ),
       ),
       home: const StartCallHomePage(),
@@ -72,6 +83,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
 
   bool _isRunning = false;
   bool _isPaused = false;
+  bool _isFinished = false;
   String _phaseLabel = 'Track Start Call';
   double _remainingSeconds = 0;
   int _runToken = 0;
@@ -117,7 +129,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     final clampedSet = _clampRange(
       RangeValues(setMin, setMax),
       min: 0.5,
-      max: 10,
+      max: 60,
     );
     final clampedPan = _clampRange(
       RangeValues(panMin, panMax),
@@ -130,7 +142,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
       _onFixed = onFixed.clamp(0.5, 30);
       _onRange = clampedOn;
       _randomOn = randomOn;
-      _setFixed = setFixed.clamp(0.5, 10);
+      _setFixed = setFixed.clamp(0.5, 60);
       _setRange = clampedSet;
       _randomSet = randomSet;
       _panFixed = panFixed.clamp(0.5, 10);
@@ -257,6 +269,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     setState(() {
       _isRunning = true;
       _isPaused = false;
+      _isFinished = false;
       _phaseLabel = 'Ready';
     });
 
@@ -314,6 +327,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     setState(() {
       _isRunning = false;
       _isPaused = false;
+      _isFinished = true;
       _phaseLabel = 'Go';
       _remainingSeconds = 0;
     });
@@ -333,7 +347,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
   }
 
   Future<void> _resetSequence() async {
-    if (!_isRunning && !_isPaused) {
+    if (!_isRunning && !_isPaused && !_isFinished) {
       return;
     }
     _runToken++;
@@ -344,12 +358,16 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     setState(() {
       _isRunning = false;
       _isPaused = false;
+      _isFinished = false;
       _phaseLabel = 'Track Start Call';
       _remainingSeconds = 0;
     });
   }
 
-  void _openSettings() {
+  Future<void> _openSettings() async {
+    if (_isRunning || _isPaused) {
+      await _resetSequence();
+    }
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -370,7 +388,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                 bottom: 24 + MediaQuery.of(context).viewInsets.bottom,
               ),
               decoration: const BoxDecoration(
-                color: Color(0xFF0F151B),
+                color: Color(0xFF0E131A),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
               child: SafeArea(
@@ -384,7 +402,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                           width: 48,
                           height: 5,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFCEDBD6),
+                            color: const Color(0xFF3A4654),
                             borderRadius: BorderRadius.circular(20),
                           ),
                         ),
@@ -394,7 +412,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                         '設定',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.w700,
-                              color: const Color(0xFFF4FFFB),
+                              color: const Color(0xFFE6FFD4),
                             ),
                       ),
                       const SizedBox(height: 16),
@@ -449,7 +467,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                             _saveDouble('set_max', values.end);
                           });
                         },
-                        maxSeconds: 10,
+                        maxSeconds: 60,
                       ),
                       const SizedBox(height: 16),
                       _buildPhaseSetting(
@@ -505,9 +523,9 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF151E25),
+        color: const Color(0xFF141B26),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFF24323B)),
+        border: Border.all(color: const Color(0xFF2A3543)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -519,13 +537,13 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                   title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
-                        color: const Color(0xFFEAF4F1),
+                        color: const Color(0xFFE6FFD4),
                       ),
                 ),
               ),
               const Text(
                 'ランダム',
-                style: TextStyle(color: Color(0xFFCAD5D2)),
+                style: TextStyle(color: Color(0xFF9FBFA8)),
               ),
               Switch(
                 value: randomEnabled,
@@ -541,7 +559,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                 Text(
                   '${rangeValues.start.toStringAsFixed(2)}s - ${rangeValues.end.toStringAsFixed(2)}s',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFFEAF4F1),
+                        color: const Color(0xFFC6EFA6),
                       ),
                 ),
                 RangeSlider(
@@ -564,7 +582,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                 Text(
                   '${fixedValue.toStringAsFixed(2)}s',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFFEAF4F1),
+                        color: const Color(0xFFC6EFA6),
                       ),
                 ),
                 Slider(
@@ -591,98 +609,175 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
         _phaseLabel.isNotEmpty && _phaseLabel != 'Track Start Call';
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color(0xFF0D1216),
-              Color(0xFF162028),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+      body: Stack(
+        children: [
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xFF0A0E0B),
+                    Color(0xFF111D14),
+                    Color(0xFF0B0F0C),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: _openSettings,
-                      icon: const Icon(Icons.settings),
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFF1A232B),
-                        foregroundColor: const Color(0xFFE6F2EE),
-                      ),
-                    ),
-                    const Spacer(),
+          Positioned(
+            top: -120,
+            left: -80,
+            child: Container(
+              width: 260,
+              height: 260,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    Color(0x226BCB1F),
+                    Color(0x00000000),
                   ],
                 ),
               ),
+            ),
+          ),
+          Positioned(
+            bottom: -140,
+            right: -60,
+            child: Container(
+              width: 300,
+              height: 300,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    Color(0x2237632D),
+                    Color(0x00000000),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: _openSettings,
+                      icon: const Icon(Icons.settings),
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xCC151B22),
+                        foregroundColor: const Color(0xFFE6FFD4),
+                      ),
+                    ),
+                      const Spacer(),
+                    ],
+                  ),
+                ),
               Expanded(
                 child: Center(
                   child: _phaseLabel.isEmpty
                       ? const SizedBox.shrink()
-                      : Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _phaseLabel,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .displaySmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: -0.5,
-                                    color: const Color(0xFFF4FFFB),
-                                  ),
-                            ),
-                            if (showCountdown) ...[
-                              const SizedBox(height: 12),
-                              Text(
-                                '$countdownText s',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineMedium
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: const Color(0xFF4CC9A7),
-                                    ),
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            final panelWidth =
+                                min(constraints.maxWidth * 0.75, 320.0);
+                            return Container(
+                              constraints: BoxConstraints(
+                                minWidth: panelWidth,
+                                maxWidth: panelWidth,
                               ),
-                            ],
-                          ],
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(22),
+                                border: Border.all(
+                                  color: const Color(0xFF2A3543),
+                                ),
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xCC141B26),
+                                    Color(0xAA0F151E),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      _phaseLabel,
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.bebasNeue(
+                                        textStyle: Theme.of(context)
+                                            .textTheme
+                                            .displaySmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              letterSpacing: 0.6,
+                                              color:
+                                                  const Color(0xFFE6FFD4),
+                                            ),
+                                      ),
+                                    ),
+                                    if (showCountdown) ...[
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        '$countdownText s',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .headlineMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                              color:
+                                                  const Color(0xFF6BCB1F),
+                                            ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                            );
+                          },
                         ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-                child: Row(
-                  children: [
-                    Expanded(
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+                  child: Row(
+                    children: [
+                      Expanded(
                       child: FilledButton(
                         onPressed:
                             _isRunning && !_isPaused ? null : _startSequence,
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 18),
-                          backgroundColor: const Color(0xFF4CC9A7),
-                          foregroundColor: const Color(0xFF0B1315),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 18),
+                            backgroundColor: const Color(0xFF6BCB1F),
+                            foregroundColor: const Color(0xFF0C1409),
+                          ),
+                          child: const Text('スタート'),
                         ),
-                        child: const Text('スタート'),
-                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: _isPaused
+                      child: _isPaused || _isFinished
                           ? OutlinedButton(
                               onPressed: _resetSequence,
                               style: OutlinedButton.styleFrom(
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 18),
                                 foregroundColor: const Color(0xFFE85C5C),
-                                side:
-                                    const BorderSide(color: Color(0xFFE85C5C)),
+                                side: const BorderSide(
+                                  color: Color(0xFFE85C5C),
+                                ),
                               ),
                               child: const Text('リセット'),
                             )
@@ -691,20 +786,21 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                               style: OutlinedButton.styleFrom(
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 18),
-                                foregroundColor: const Color(0xFF4CC9A7),
+                                foregroundColor: const Color(0xFF6BCB1F),
                                 side: const BorderSide(
-                                  color: Color(0xFF4CC9A7),
+                                  color: Color(0xFF6BCB1F),
                                 ),
                               ),
                               child: const Text('一時停止'),
                             ),
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
