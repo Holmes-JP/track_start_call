@@ -695,13 +695,17 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     required Color primaryColor,
     required Color secondaryColor,
     required bool filled,
+    bool isSmallScreen = false,
   }) {
     final isEnabled = onPressed != null;
     final opacity = isEnabled ? 1.0 : 0.4;
+    final borderRadiusValue = isSmallScreen ? 12.0 : 16.0;
+    final verticalPadding = isSmallScreen ? 14.0 : 18.0;
+    final fontSize = isSmallScreen ? 14.0 : 16.0;
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(borderRadiusValue),
         boxShadow: isEnabled
             ? [
                 BoxShadow(
@@ -716,11 +720,11 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(borderRadiusValue),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 18),
+            padding: EdgeInsets.symmetric(vertical: verticalPadding),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(borderRadiusValue),
               gradient: filled
                   ? LinearGradient(
                       colors: [
@@ -739,15 +743,18 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                     ),
             ),
             child: Center(
-              child: Text(
-                label,
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 2,
-                  color: filled
-                      ? const Color(0xFF0C1409).withOpacity(opacity)
-                      : primaryColor.withOpacity(opacity),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2,
+                    color: filled
+                        ? const Color(0xFF0C1409).withOpacity(opacity)
+                        : primaryColor.withOpacity(opacity),
+                  ),
                 ),
               ),
             ),
@@ -797,8 +804,25 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                       ? const SizedBox.shrink()
                       : LayoutBuilder(
                           builder: (context, constraints) {
-                            final panelWidth =
-                                min(constraints.maxWidth * 0.8, 340.0);
+                            // Responsive sizing based on screen width
+                            final screenWidth = constraints.maxWidth;
+                            final screenHeight = constraints.maxHeight;
+                            final isSmallScreen = screenWidth < 360;
+                            final isTinyScreen = screenWidth < 300;
+
+                            // Responsive panel width
+                            final panelWidth = min(screenWidth * 0.85, 340.0);
+
+                            // Responsive font sizes
+                            final labelFontSize = isTinyScreen ? 28.0 : (isSmallScreen ? 32.0 : 38.0);
+                            final countdownFontSize = isTinyScreen ? 36.0 : (isSmallScreen ? 40.0 : 44.0);
+                            final secondsFontSize = isTinyScreen ? 10.0 : 12.0;
+
+                            // Responsive padding
+                            final horizontalPadding = isSmallScreen ? 16.0 : 20.0;
+                            final verticalPadding = isSmallScreen ? 14.0 : 18.0;
+                            final borderRadius = isSmallScreen ? 18.0 : 22.0;
+
                             final progress = _phaseStartSeconds > 0
                                 ? 1.0 - (_remainingSeconds / _phaseStartSeconds)
                                 : 0.0;
@@ -811,8 +835,8 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                                 child: CustomPaint(
                                   painter: RoundedRectProgressPainter(
                                     progress: progress,
-                                    borderRadius: 24,
-                                    strokeWidth: 4,
+                                    borderRadius: borderRadius,
+                                    strokeWidth: isSmallScreen ? 3 : 4,
                                     progressColor: progressColor,
                                     secondaryColor: secondaryColor,
                                     backgroundColor: const Color(0xFF1A2332),
@@ -823,12 +847,12 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                                       minWidth: panelWidth,
                                       maxWidth: panelWidth,
                                     ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 24,
-                                      vertical: 20,
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: horizontalPadding,
+                                      vertical: verticalPadding,
                                     ),
                                     decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(24),
+                                      borderRadius: BorderRadius.circular(borderRadius),
                                       gradient: LinearGradient(
                                         colors: [
                                           const Color(0xFF141B26).withOpacity(0.95),
@@ -849,40 +873,46 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                                       mainAxisSize: MainAxisSize.min,
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
-                                        // Phase label with glow
-                                        _buildGlowingText(
-                                          _phaseLabel,
-                                          GoogleFonts.bebasNeue(
-                                            fontSize: 42,
-                                            fontWeight: FontWeight.w700,
-                                            letterSpacing: 2,
-                                            color: const Color(0xFFE6FFD4),
+                                        // Phase label with glow - auto-fit to prevent overflow
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: _buildGlowingText(
+                                            _phaseLabel,
+                                            GoogleFonts.bebasNeue(
+                                              fontSize: labelFontSize,
+                                              fontWeight: FontWeight.w700,
+                                              letterSpacing: 2,
+                                              color: const Color(0xFFE6FFD4),
+                                            ),
+                                            glowColor: progressColor.withOpacity(0.3),
                                           ),
-                                          glowColor: progressColor.withOpacity(0.3),
                                         ),
                                         if (showCountdown) ...[
-                                          const SizedBox(height: 12),
-                                          // Countdown with gradient and glow - fixed width monospace
-                                          ShaderMask(
-                                            shaderCallback: (bounds) => LinearGradient(
-                                              colors: [progressColor, secondaryColor],
-                                              begin: Alignment.topLeft,
-                                              end: Alignment.bottomRight,
-                                            ).createShader(bounds),
-                                            child: _buildGlowingText(
-                                              countdownText,
-                                              GoogleFonts.robotoMono(
-                                                fontSize: 48,
-                                                fontWeight: FontWeight.w700,
-                                                color: Colors.white,
+                                          SizedBox(height: isSmallScreen ? 8 : 10),
+                                          // Countdown with gradient and glow
+                                          FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: ShaderMask(
+                                              shaderCallback: (bounds) => LinearGradient(
+                                                colors: [progressColor, secondaryColor],
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                              ).createShader(bounds),
+                                              child: _buildGlowingText(
+                                                countdownText,
+                                                GoogleFonts.robotoMono(
+                                                  fontSize: countdownFontSize,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.white,
+                                                ),
+                                                glowColor: progressColor.withOpacity(0.5),
                                               ),
-                                              glowColor: progressColor.withOpacity(0.5),
                                             ),
                                           ),
                                           Text(
                                             'seconds',
                                             style: GoogleFonts.spaceGrotesk(
-                                              fontSize: 12,
+                                              fontSize: secondsFontSize,
                                               fontWeight: FontWeight.w500,
                                               color: progressColor.withOpacity(0.7),
                                               letterSpacing: 3,
@@ -899,39 +929,52 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                         ),
                 ),
               ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _buildGlowButton(
-                          onPressed: _isRunning && !_isPaused ? null : _startSequence,
-                          label: 'START',
-                          primaryColor: PhaseColors.ready,
-                          secondaryColor: PhaseColors.readySecondary,
-                          filled: true,
-                        ),
+                Builder(
+                  builder: (context) {
+                    final screenWidth = MediaQuery.of(context).size.width;
+                    final isSmallScreen = screenWidth < 360;
+                    final horizontalPadding = isSmallScreen ? 16.0 : 24.0;
+                    final bottomPadding = isSmallScreen ? 20.0 : 32.0;
+                    final buttonSpacing = isSmallScreen ? 12.0 : 16.0;
+
+                    return Padding(
+                      padding: EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, bottomPadding),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _buildGlowButton(
+                              onPressed: _isRunning && !_isPaused ? null : _startSequence,
+                              label: 'START',
+                              primaryColor: PhaseColors.ready,
+                              secondaryColor: PhaseColors.readySecondary,
+                              filled: true,
+                              isSmallScreen: isSmallScreen,
+                            ),
+                          ),
+                          SizedBox(width: buttonSpacing),
+                          Expanded(
+                            child: _isPaused || _isFinished
+                                ? _buildGlowButton(
+                                    onPressed: _resetSequence,
+                                    label: 'RESET',
+                                    primaryColor: const Color(0xFFE85C5C),
+                                    secondaryColor: const Color(0xFFFF6B6B),
+                                    filled: false,
+                                    isSmallScreen: isSmallScreen,
+                                  )
+                                : _buildGlowButton(
+                                    onPressed: _isRunning ? _pauseSequence : null,
+                                    label: 'PAUSE',
+                                    primaryColor: PhaseColors.ready,
+                                    secondaryColor: PhaseColors.readySecondary,
+                                    filled: false,
+                                    isSmallScreen: isSmallScreen,
+                                  ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _isPaused || _isFinished
-                            ? _buildGlowButton(
-                                onPressed: _resetSequence,
-                                label: 'RESET',
-                                primaryColor: const Color(0xFFE85C5C),
-                                secondaryColor: const Color(0xFFFF6B6B),
-                                filled: false,
-                              )
-                            : _buildGlowButton(
-                                onPressed: _isRunning ? _pauseSequence : null,
-                                label: 'PAUSE',
-                                primaryColor: PhaseColors.ready,
-                                secondaryColor: PhaseColors.readySecondary,
-                                filled: false,
-                              ),
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ],
             ),
