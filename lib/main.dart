@@ -512,21 +512,17 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
 
             return Container(
               constraints: BoxConstraints(maxHeight: maxHeight),
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 12,
-                bottom: 24 + MediaQuery.of(context).viewInsets.bottom,
-              ),
               decoration: const BoxDecoration(
                 color: Color(0xFF0E131A),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Fixed drag handle at top
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12, bottom: 8),
+                    child: Center(
                       child: Container(
                         width: 48,
                         height: 5,
@@ -536,16 +532,27 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                         ),
                       ),
                     ),
-                      const SizedBox(height: 16),
-                      Text(
-                        '設定',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFFE6FFD4),
-                            ),
+                  ),
+                  // Scrollable content
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.only(
+                        left: 20,
+                        right: 20,
+                        bottom: 24 + MediaQuery.of(context).viewInsets.bottom,
                       ),
-                      const SizedBox(height: 16),
-                      _buildPhaseSetting(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '設定',
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFFE6FFD4),
+                                ),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildPhaseSetting(
                         title: 'On Your Marks',
                         randomEnabled: _randomOn,
                         onRandomChanged: (value) {
@@ -660,47 +667,56 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                       ),
                       const SizedBox(height: 24),
                       // Credit button
-                      GestureDetector(
-                        onTap: () => _showCredits(context),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF141B26),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFF2A3543)),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
+                          GestureDetector(
+                            onTap: () => _showCredits(context),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF141B26),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFF2A3543)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  const Icon(
-                                    Icons.info_outline,
-                                    color: Color(0xFF9FBFA8),
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    'クレジット',
-                                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                          color: const Color(0xFFE6FFD4),
+                                  Flexible(
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.info_outline,
+                                          color: Color(0xFF9FBFA8),
+                                          size: 20,
                                         ),
+                                        const SizedBox(width: 12),
+                                        Flexible(
+                                          child: Text(
+                                            'クレジット',
+                                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                                  color: const Color(0xFFE6FFD4),
+                                                ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(
+                                    Icons.chevron_right,
+                                    color: Color(0xFF9FBFA8),
+                                    size: 24,
                                   ),
                                 ],
                               ),
-                              const Icon(
-                                Icons.chevron_right,
-                                color: Color(0xFF9FBFA8),
-                                size: 24,
-                              ),
-                            ],
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              );
+                ],
+              ),
+            );
             },
           );
         },
@@ -716,87 +732,110 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) {
+        final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
         return Container(
-          padding: const EdgeInsets.all(24),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
           decoration: const BoxDecoration(
             color: Color(0xFF0E131A),
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(
-                child: Container(
-                  width: 48,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF3A4654),
-                    borderRadius: BorderRadius.circular(20),
+              // Fixed drag handle
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 8),
+                child: Center(
+                  child: Container(
+                    width: 48,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3A4654),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
-              Text(
-                'クレジット',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFFE6FFD4),
-                    ),
-              ),
-              const SizedBox(height: 24),
-              // Audio Credits Section
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF141B26),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF2A3543)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.audiotrack,
-                          color: Color(0xFF6BCB1F),
-                          size: 20,
+              // Scrollable content
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.only(
+                    left: 24,
+                    right: 24,
+                    bottom: 24 + bottomPadding,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'クレジット',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFFE6FFD4),
+                            ),
+                      ),
+                      const SizedBox(height: 24),
+                      // Audio Credits Section
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF141B26),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFF2A3543)),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '音声素材',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFFE6FFD4),
-                              ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.audiotrack,
+                                  color: Color(0xFF6BCB1F),
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    '音声素材',
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: const Color(0xFFE6FFD4),
+                                        ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildCreditItem(
+                              context,
+                              name: 'あみたろの声素材工房',
+                              url: 'https://amitaro.net/',
+                            ),
+                            const SizedBox(height: 12),
+                            _buildCreditItem(
+                              context,
+                              name: '音読さん',
+                              url: 'https://ondoku3.com/',
+                            ),
+                            const SizedBox(height: 12),
+                            _buildCreditItem(
+                              context,
+                              name: 'On-Jin ～音人～',
+                              url: 'https://on-jin.com/',
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildCreditItem(
-                      context,
-                      name: 'あみたろの声素材工房',
-                      url: 'https://amitaro.net/',
-                    ),
-                    const SizedBox(height: 12),
-                    _buildCreditItem(
-                      context,
-                      name: '音読さん',
-                      url: 'https://ondoku3.com/',
-                    ),
-                    const SizedBox(height: 12),
-                    _buildCreditItem(
-                      context,
-                      name: 'On-Jin ～音人～',
-                      url: 'https://on-jin.com/',
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 24),
             ],
           ),
         );
@@ -815,6 +854,8 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 2,
         ),
         const SizedBox(height: 4),
         Text(
@@ -823,6 +864,8 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
             color: Color(0xFF6BCB1F),
             fontSize: 12,
           ),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
       ],
     );
@@ -979,7 +1022,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                             color: const Color(0xFFE6FFD4),
                           ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     const Icon(
                       Icons.keyboard_arrow_down,
                       color: Color(0xFF9FBFA8),
@@ -989,13 +1032,21 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                 ),
               ),
               const Spacer(),
-              const Text(
+              Text(
                 'ランダム',
-                style: TextStyle(color: Color(0xFF9FBFA8)),
+                style: const TextStyle(color: Color(0xFF9FBFA8), fontSize: 12),
               ),
-              Switch(
-                value: randomEnabled,
-                onChanged: _isRunning ? null : onRandomChanged,
+              const SizedBox(width: 4),
+              SizedBox(
+                height: 24,
+                width: 40,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: Switch(
+                    value: randomEnabled,
+                    onChanged: _isRunning ? null : onRandomChanged,
+                  ),
+                ),
               ),
             ],
           ),
