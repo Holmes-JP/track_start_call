@@ -571,6 +571,9 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                             _saveString('on_audio_path', path);
                           });
                         },
+                        onPreviewAudio: () {
+                          _player.play(AssetSource(_onAudioPath));
+                        },
                       ),
                       const SizedBox(height: 16),
                       _buildPhaseSetting(
@@ -605,6 +608,9 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                             _setAudioPath = path;
                             _saveString('set_audio_path', path);
                           });
+                        },
+                        onPreviewAudio: () {
+                          _player.play(AssetSource(_setAudioPath));
                         },
                       ),
                       const SizedBox(height: 16),
@@ -641,6 +647,9 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                             _saveString('go_audio_path', path);
                           });
                         },
+                        onPreviewAudio: () {
+                          _player.play(AssetSource(_goAudioPath));
+                        },
                       ),
                     ],
                   ),
@@ -650,6 +659,62 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildNumberInput({
+    required double value,
+    required double min,
+    required double max,
+    required ValueChanged<double> onChanged,
+    required bool enabled,
+    double width = 70,
+  }) {
+    return SizedBox(
+      width: width,
+      height: 40,
+      child: TextField(
+        controller: TextEditingController(text: value.toStringAsFixed(2)),
+        enabled: enabled,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFFC6EFA6),
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        decoration: InputDecoration(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          filled: true,
+          fillColor: const Color(0xFF1A2332),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF3A4654)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF3A4654)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF6BCB1F), width: 2),
+          ),
+          suffixText: 's',
+          suffixStyle: const TextStyle(
+            color: Color(0xFF9FBFA8),
+            fontSize: 12,
+          ),
+        ),
+        onSubmitted: (text) {
+          final parsed = double.tryParse(text);
+          if (parsed != null) {
+            onChanged(parsed.clamp(min, max));
+          }
+        },
+        onTapOutside: (_) {
+          FocusManager.instance.primaryFocus?.unfocus();
+        },
+      ),
     );
   }
 
@@ -665,6 +730,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     required List<AudioOption> audioOptions,
     required String selectedAudioPath,
     required ValueChanged<String> onAudioChanged,
+    required VoidCallback onPreviewAudio,
   }) {
     const sliderMin = 0.5;
     final sliderMax = maxSeconds;
@@ -743,15 +809,28 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
               ),
             ],
           ),
-          // Selected audio display
+          // Selected audio display with preview button
           Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              selectedAudio.name,
-              style: const TextStyle(
-                color: Color(0xFF6BCB1F),
-                fontSize: 12,
-              ),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: onPreviewAudio,
+                  child: const Icon(
+                    Icons.play_circle_outline,
+                    color: Color(0xFF6BCB1F),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  selectedAudio.name,
+                  style: const TextStyle(
+                    color: Color(0xFF6BCB1F),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
@@ -759,12 +838,39 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${rangeValues.start.toStringAsFixed(2)}s - ${rangeValues.end.toStringAsFixed(2)}s',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFFC6EFA6),
-                      ),
+                Row(
+                  children: [
+                    _buildNumberInput(
+                      value: rangeValues.start,
+                      min: sliderMin,
+                      max: rangeValues.end,
+                      enabled: !_isRunning,
+                      onChanged: (value) {
+                        if (value <= rangeValues.end) {
+                          onRangeChanged(RangeValues(value, rangeValues.end));
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '〜',
+                      style: TextStyle(color: Color(0xFF9FBFA8), fontSize: 16),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildNumberInput(
+                      value: rangeValues.end,
+                      min: rangeValues.start,
+                      max: sliderMax,
+                      enabled: !_isRunning,
+                      onChanged: (value) {
+                        if (value >= rangeValues.start) {
+                          onRangeChanged(RangeValues(rangeValues.start, value));
+                        }
+                      },
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 8),
                 RangeSlider(
                   values: rangeValues,
                   min: sliderMin,
@@ -782,12 +888,14 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${fixedValue.toStringAsFixed(2)}s',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFFC6EFA6),
-                      ),
+                _buildNumberInput(
+                  value: fixedValue,
+                  min: sliderMin,
+                  max: sliderMax,
+                  enabled: !_isRunning,
+                  onChanged: onFixedChanged,
                 ),
+                const SizedBox(height: 8),
                 Slider(
                   value: fixedValue,
                   min: sliderMin,
