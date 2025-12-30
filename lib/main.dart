@@ -49,14 +49,36 @@ class AudioOptions {
 
 // Phase color definitions with gradients
 class PhaseColors {
-  static const ready = Color(0xFF6BCB1F);
-  static const readySecondary = Color(0xFF4CAF50);
-  static const onYourMarks = Color(0xFFFFB800);
-  static const onYourMarksSecondary = Color(0xFFFF9500);
-  static const set = Color(0xFFFF6B35);
-  static const setSecondary = Color(0xFFFF4757);
-  static const go = Color(0xFFFF3366);
-  static const goSecondary = Color(0xFFE91E63);
+  // Start colors (medium saturation) - shown at beginning of countdown
+  static const readyStart = Color(0xFF8ED860);
+  static const onYourMarksStart = Color(0xFFFFCC00);
+  static const setStart = Color(0xFFEF5350);  // Clear red from the start
+  static const goStart = Color(0xFFFF1744);   // Same as end (no countdown for Go)
+
+  // End colors (fully saturated/vivid) - shown when countdown reaches 0
+  static const ready = Color(0xFF4CAF50);
+  static const readySecondary = Color(0xFF2E7D32);
+  static const onYourMarks = Color(0xFFFF9800);
+  static const onYourMarksSecondary = Color(0xFFEF6C00);
+  static const set = Color(0xFFD32F2F);  // Deep vivid red
+  static const setSecondary = Color(0xFFB71C1C);  // Dark red
+  static const go = Color(0xFFFF1744);  // Vivid red-pink
+  static const goSecondary = Color(0xFFD50000);  // Deep red
+
+  static Color getStartColor(String phase) {
+    switch (phase) {
+      case 'Ready':
+        return readyStart;
+      case 'On Your Marks':
+        return onYourMarksStart;
+      case 'Set':
+        return setStart;
+      case 'Go':
+        return goStart;
+      default:
+        return readyStart;
+    }
+  }
 
   static Color getPrimaryColor(String phase) {
     switch (phase) {
@@ -86,6 +108,19 @@ class PhaseColors {
       default:
         return readySecondary;
     }
+  }
+
+  // Get interpolated color based on progress (0.0 = start, 1.0 = end)
+  static Color getInterpolatedColor(String phase, double progress) {
+    final startColor = getStartColor(phase);
+    final endColor = getPrimaryColor(phase);
+    return Color.lerp(startColor, endColor, progress) ?? endColor;
+  }
+
+  static Color getInterpolatedSecondaryColor(String phase, double progress) {
+    final startColor = getStartColor(phase);
+    final endColor = getSecondaryColor(phase);
+    return Color.lerp(startColor, endColor, progress) ?? endColor;
   }
 }
 
@@ -1522,8 +1557,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
 
         final progress = _animatedProgress;
 
-        final progressColor = PhaseColors.getPrimaryColor(_phaseLabel);
-        final secondaryColor = PhaseColors.getSecondaryColor(_phaseLabel);
+        // Interpolate colors based on progress (light -> dark as countdown approaches 0)
+        // For 'Go' phase or when finished, always use full intensity (progress = 1.0)
+        final effectiveProgress = (_phaseLabel == 'Go' || _isFinished) ? 1.0 : progress;
+        final progressColor = PhaseColors.getInterpolatedColor(_phaseLabel, effectiveProgress);
+        final secondaryColor = PhaseColors.getInterpolatedSecondaryColor(_phaseLabel, effectiveProgress);
 
         return RepaintBoundary(
           child: IntrinsicWidth(
@@ -1581,7 +1619,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                     ),
                     if (showCountdown) ...[
                       SizedBox(height: isLandscape ? 4 : (isSmallScreen ? 8 : 10)),
-                      // Countdown with gradient and glow
+                      // Countdown with gradient and glow - colors interpolate with progress
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         child: ShaderMask(
