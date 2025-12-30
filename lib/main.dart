@@ -687,52 +687,52 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
         children: [
           Row(
             children: [
-              Expanded(
-                child: PopupMenuButton<String>(
-                  enabled: !_isRunning,
-                  offset: const Offset(0, 40),
-                  color: const Color(0xFF1A2332),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: const BorderSide(color: Color(0xFF3A4654)),
-                  ),
-                  onSelected: onAudioChanged,
-                  itemBuilder: (context) => audioOptions.map((option) {
-                    final isSelected = option.path == selectedAudioPath;
-                    return PopupMenuItem<String>(
-                      value: option.path,
-                      child: Text(
-                        option.name,
-                        style: TextStyle(
-                          color: isSelected
-                              ? const Color(0xFF6BCB1F)
-                              : const Color(0xFFC6EFA6),
-                          fontWeight:
-                              isSelected ? FontWeight.w600 : FontWeight.normal,
-                        ),
+              PopupMenuButton<String>(
+                enabled: !_isRunning,
+                padding: EdgeInsets.zero,
+                offset: const Offset(0, 40),
+                color: const Color(0xFF1A2332),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: Color(0xFF3A4654)),
+                ),
+                onSelected: onAudioChanged,
+                itemBuilder: (context) => audioOptions.map((option) {
+                  final isSelected = option.path == selectedAudioPath;
+                  return PopupMenuItem<String>(
+                    value: option.path,
+                    child: Text(
+                      option.name,
+                      style: TextStyle(
+                        color: isSelected
+                            ? const Color(0xFF6BCB1F)
+                            : const Color(0xFFC6EFA6),
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
                       ),
-                    );
-                  }).toList(),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFFE6FFD4),
-                            ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(
-                        Icons.keyboard_arrow_down,
-                        color: Color(0xFF9FBFA8),
-                        size: 20,
-                      ),
-                    ],
-                  ),
+                    ),
+                  );
+                }).toList(),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFFE6FFD4),
+                          ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.keyboard_arrow_down,
+                      color: Color(0xFF9FBFA8),
+                      size: 20,
+                    ),
+                  ],
                 ),
               ),
+              const Spacer(),
               const Text(
                 'ランダム',
                 style: TextStyle(color: Color(0xFF9FBFA8)),
