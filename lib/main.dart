@@ -172,6 +172,9 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
   bool _isSettingsOpen = false;
   String _phaseLabel = 'Track Starter';
 
+  // Loop setting
+  bool _loopEnabled = false;
+
   // Hidden command tap tracking
   int _titleTapCount = 0;
   DateTime? _lastTitleTap;
@@ -213,6 +216,8 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     final setAudioPath = prefs.getString('set_audio_path') ?? _setAudioPath;
     final goAudioPath = prefs.getString('go_audio_path') ?? _goAudioPath;
 
+    final loopEnabled = prefs.getBool('loop_enabled') ?? _loopEnabled;
+
     if (!mounted) {
       return;
     }
@@ -247,6 +252,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
       _onAudioPath = onAudioPath;
       _setAudioPath = setAudioPath;
       _goAudioPath = goAudioPath;
+      _loopEnabled = loopEnabled;
     });
   }
 
@@ -384,73 +390,91 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     const setColor = Color(0xFFFF6B35);
     const goColor = Color(0xFFFF3366);
 
-    final onDelay = _getDelay(
-      random: _randomOn,
-      fixed: _onFixed,
-      range: _onRange,
-    );
-    final setDelay = _getDelay(
-      random: _randomSet,
-      fixed: _setFixed,
-      range: _setRange,
-    );
-    final panDelay = _getDelay(
-      random: _randomPan,
-      fixed: _panFixed,
-      range: _panRange,
-    );
+    do {
+      // Reset for each loop iteration (random delays are recalculated each time)
+      if (_loopEnabled && _completedPhaseColors.isNotEmpty) {
+        // Starting a new loop iteration
+        setState(() {
+          _phaseLabel = 'Ready';
+          _completedPhaseColors = [];
+        });
+      }
 
-    final onOk = await _runPhase(
-      runId: runId,
-      seconds: onDelay,
-      assetPath: _onAudioPath,
-      labelOnPlay: 'On Your Marks',
-      labelBeforePlay: 'Ready',
-    );
-    if (!onOk) {
-      return;
-    }
-    setState(() {
-      _completedPhaseColors = [..._completedPhaseColors, readyColor];
-    });
+      final onDelay = _getDelay(
+        random: _randomOn,
+        fixed: _onFixed,
+        range: _onRange,
+      );
+      final setDelay = _getDelay(
+        random: _randomSet,
+        fixed: _setFixed,
+        range: _setRange,
+      );
+      final panDelay = _getDelay(
+        random: _randomPan,
+        fixed: _panFixed,
+        range: _panRange,
+      );
 
-    final setOk = await _runPhase(
-      runId: runId,
-      seconds: setDelay,
-      assetPath: _setAudioPath,
-      labelOnPlay: 'Set',
-    );
-    if (!setOk) {
-      return;
-    }
-    setState(() {
-      _completedPhaseColors = [..._completedPhaseColors, onYourMarksColor];
-    });
+      final onOk = await _runPhase(
+        runId: runId,
+        seconds: onDelay,
+        assetPath: _onAudioPath,
+        labelOnPlay: 'On Your Marks',
+        labelBeforePlay: 'Ready',
+      );
+      if (!onOk) {
+        return;
+      }
+      setState(() {
+        _completedPhaseColors = [..._completedPhaseColors, readyColor];
+      });
 
-    final panOk = await _runPhase(
-      runId: runId,
-      seconds: panDelay,
-      assetPath: _goAudioPath,
-      labelOnPlay: 'Go',
-    );
-    if (!panOk) {
-      return;
-    }
-    setState(() {
-      _completedPhaseColors = [..._completedPhaseColors, setColor];
-    });
+      final setOk = await _runPhase(
+        runId: runId,
+        seconds: setDelay,
+        assetPath: _setAudioPath,
+        labelOnPlay: 'Set',
+      );
+      if (!setOk) {
+        return;
+      }
+      setState(() {
+        _completedPhaseColors = [..._completedPhaseColors, onYourMarksColor];
+      });
 
-    if (!mounted || runId != _runToken) {
-      return;
-    }
+      final panOk = await _runPhase(
+        runId: runId,
+        seconds: panDelay,
+        assetPath: _goAudioPath,
+        labelOnPlay: 'Go',
+      );
+      if (!panOk) {
+        return;
+      }
+      setState(() {
+        _completedPhaseColors = [..._completedPhaseColors, setColor, goColor];
+        _phaseLabel = 'Go';
+        _remainingSeconds = 0;
+      });
+
+      if (!mounted || runId != _runToken) {
+        return;
+      }
+
+      // Brief pause before next loop iteration
+      if (_loopEnabled) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (!mounted || runId != _runToken) {
+          return;
+        }
+      }
+    } while (_loopEnabled && mounted && runId == _runToken);
 
     setState(() {
       _isRunning = false;
       _isPaused = false;
       _isFinished = true;
-      _phaseLabel = 'Go';
-      _remainingSeconds = 0;
-      _completedPhaseColors = [..._completedPhaseColors, goColor];
     });
   }
 
@@ -550,6 +574,54 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                                   fontWeight: FontWeight.w700,
                                   color: const Color(0xFFE6FFD4),
                                 ),
+                          ),
+                          const SizedBox(height: 16),
+                          // Loop setting
+                          Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF141B26),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: const Color(0xFF2A3543)),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.repeat,
+                                      color: Color(0xFF6BCB1F),
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      'ループ',
+                                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            color: const Color(0xFFE6FFD4),
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(
+                                  height: 24,
+                                  width: 40,
+                                  child: FittedBox(
+                                    fit: BoxFit.contain,
+                                    child: Switch(
+                                      value: _loopEnabled,
+                                      onChanged: (value) {
+                                        sync(() {
+                                          _loopEnabled = value;
+                                          _saveBool('loop_enabled', value);
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                           const SizedBox(height: 16),
                           _buildPhaseSetting(
@@ -1116,12 +1188,13 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                   values: rangeValues,
                   min: sliderMin,
                   max: sliderMax,
-                  divisions: 95,
-                  labels: RangeLabels(
-                    rangeValues.start.toStringAsFixed(2),
-                    rangeValues.end.toStringAsFixed(2),
-                  ),
-                  onChanged: _isRunning ? null : onRangeChanged,
+                  divisions: ((sliderMax - sliderMin) * 10).round(),
+                  onChanged: _isRunning ? null : (values) {
+                    // Round to 0.1
+                    final roundedStart = (values.start * 10).round() / 10;
+                    final roundedEnd = (values.end * 10).round() / 10;
+                    onRangeChanged(RangeValues(roundedStart, roundedEnd));
+                  },
                 ),
               ],
             )
@@ -1141,9 +1214,12 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                   value: fixedValue,
                   min: sliderMin,
                   max: sliderMax,
-                  divisions: 95,
-                  label: fixedValue.toStringAsFixed(2),
-                  onChanged: _isRunning ? null : onFixedChanged,
+                  divisions: ((sliderMax - sliderMin) * 10).round(),
+                  onChanged: _isRunning ? null : (value) {
+                    // Round to 0.1
+                    final rounded = (value * 10).round() / 10;
+                    onFixedChanged(rounded);
+                  },
                 ),
               ],
             ),
