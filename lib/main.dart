@@ -1799,7 +1799,12 @@ class RoundedRectProgressPainter extends CustomPainter {
       ..strokeWidth = strokeWidth;
     canvas.drawPath(path, bgPaint);
 
-    // Draw current progress only (no overlapping completed colors)
+    // Draw completed phase colors (each takes full loop)
+    for (final color in completedPhaseColors) {
+      _drawProgressWithGlow(canvas, path, color, color, size);
+    }
+
+    // Draw current progress on top
     if (progress <= 0) return;
 
     final pathMetrics = path.computeMetrics().first;
