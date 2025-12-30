@@ -5,6 +5,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   runApp(const StartCallApp());
@@ -21,33 +22,28 @@ class AudioOption {
 // Audio options for each phase
 class AudioOptions {
   static const List<AudioOption> onYourMarks = [
-    AudioOption(name: 'デフォルト', path: 'audio/On Your Marks/on_your_marks_defaults.mp3'),
-    AudioOption(name: 'On Your Marks (女性)', path: 'audio/On Your Marks/On_Your_Marks_Female.mp3'),
     AudioOption(name: 'On Your Marks (男性)', path: 'audio/On Your Marks/On_Your_Marks_Male.mp3'),
-    AudioOption(name: '位置について (女性)', path: 'audio/On Your Marks/ichinitsuite_Female.mp3'),
+    AudioOption(name: 'On Your Marks (女性)', path: 'audio/On Your Marks/On_Your_Marks_Female.mp3'),
     AudioOption(name: '位置について (男性)', path: 'audio/On Your Marks/ichinitsuite_Male.mp3'),
+    AudioOption(name: '位置について (女性)', path: 'audio/On Your Marks/ichinitsuite_Female.mp3'),
     AudioOption(name: '位置について (あみたろ)', path: 'audio/On Your Marks/ichinitsuite_amitaro.mp3'),
   ];
 
   static const List<AudioOption> set = [
-    AudioOption(name: 'デフォルト', path: 'audio/Set/set_defaults.mp3'),
-    AudioOption(name: 'Set (女性)', path: 'audio/Set/Set_Female.mp3'),
     AudioOption(name: 'Set (男性)', path: 'audio/Set/Set_Male.mp3'),
-    AudioOption(name: '用意 (女性)', path: 'audio/Set/youi_Female.mp3'),
+    AudioOption(name: 'Set (女性)', path: 'audio/Set/Set_Female.mp3'),
     AudioOption(name: '用意 (男性)', path: 'audio/Set/youi_Male.mp3'),
+    AudioOption(name: '用意 (女性)', path: 'audio/Set/youi_Female.mp3'),
     AudioOption(name: '用意 (あみたろ)', path: 'audio/Set/youi_amitaro.mp3'),
   ];
 
   static const List<AudioOption> go = [
-    AudioOption(name: 'デフォルト (ピストル)', path: 'audio/Go/pan_defaults.mp3'),
+    AudioOption(name: 'ピストル 01', path: 'audio/Go/pan_01.mp3'),
+    AudioOption(name: 'ピストル 02', path: 'audio/Go/pan_02.mp3'),
+    AudioOption(name: 'ピストル 03', path: 'audio/Go/pan_03.mp3'),
+    AudioOption(name: 'ピストル 04', path: 'audio/Go/pan_04.mp3'),
     AudioOption(name: 'ドン (あみたろ)', path: 'audio/Go/don_amitaro.mp3'),
     AudioOption(name: 'スタート (あみたろ)', path: 'audio/Go/start_amitaro.mp3'),
-    AudioOption(name: '効果音 01', path: 'audio/Go/sound_effect_01.mp3'),
-    AudioOption(name: '効果音 02', path: 'audio/Go/sound_effect_02.mp3'),
-    AudioOption(name: '効果音 03', path: 'audio/Go/sound_effect_03.mp3'),
-    AudioOption(name: '効果音 04', path: 'audio/Go/sound_effect_04.mp3'),
-    AudioOption(name: '効果音 05', path: 'audio/Go/sound_effect_05.mp3'),
-    AudioOption(name: '効果音 06', path: 'audio/Go/sound_effect_06.mp3'),
   ];
 }
 
@@ -173,7 +169,12 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
   bool _isRunning = false;
   bool _isPaused = false;
   bool _isFinished = false;
+  bool _isSettingsOpen = false;
   String _phaseLabel = 'Track Starter';
+
+  // Hidden command tap tracking
+  int _titleTapCount = 0;
+  DateTime? _lastTitleTap;
   double _remainingSeconds = 0;
   double _phaseStartSeconds = 0;
   int _runToken = 0;
@@ -490,9 +491,14 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     if (_isRunning || _isPaused) {
       await _resetSequence();
     }
-    showModalBottomSheet<void>(
+    setState(() {
+      _isSettingsOpen = true;
+    });
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      useRootNavigator: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
         return StatefulBuilder(
@@ -502,7 +508,10 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
               modalSetState(() {});
             }
 
+            final maxHeight = MediaQuery.of(context).size.height * 0.85;
+
             return Container(
+              constraints: BoxConstraints(maxHeight: maxHeight),
               padding: EdgeInsets.only(
                 left: 20,
                 right: 20,
@@ -513,22 +522,20 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                 color: Color(0xFF0E131A),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              child: SafeArea(
-                top: false,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 48,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF3A4654),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 48,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3A4654),
+                          borderRadius: BorderRadius.circular(20),
                         ),
                       ),
+                    ),
                       const SizedBox(height: 16),
                       Text(
                         '設定',
@@ -651,15 +658,198 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                           _player.play(AssetSource(_goAudioPath));
                         },
                       ),
+                      const SizedBox(height: 24),
+                      // Credit button
+                      GestureDetector(
+                        onTap: () => _showCredits(context),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF141B26),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFF2A3543)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.info_outline,
+                                    color: Color(0xFF9FBFA8),
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    'クレジット',
+                                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                          color: const Color(0xFFE6FFD4),
+                                        ),
+                                  ),
+                                ],
+                              ),
+                              const Icon(
+                                Icons.chevron_right,
+                                color: Color(0xFF9FBFA8),
+                                size: 24,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
+              );
+            },
+          );
+        },
+      );
+    if (mounted) {
+      setState(() {
+        _isSettingsOpen = false;
+      });
+    }
+  }
+
+  void _showCredits(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: const BoxDecoration(
+            color: Color(0xFF0E131A),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 48,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3A4654),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
               ),
-            );
-          },
+              const SizedBox(height: 20),
+              Text(
+                'クレジット',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFFE6FFD4),
+                    ),
+              ),
+              const SizedBox(height: 24),
+              // Audio Credits Section
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF141B26),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF2A3543)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.audiotrack,
+                          color: Color(0xFF6BCB1F),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '音声素材',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFFE6FFD4),
+                              ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildCreditItem(
+                      context,
+                      name: 'あみたろの声素材工房',
+                      url: 'https://amitaro.net/',
+                    ),
+                    const SizedBox(height: 12),
+                    _buildCreditItem(
+                      context,
+                      name: '音読さん',
+                      url: 'https://ondoku3.com/',
+                    ),
+                    const SizedBox(height: 12),
+                    _buildCreditItem(
+                      context,
+                      name: 'On-Jin ～音人～',
+                      url: 'https://on-jin.com/',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
         );
       },
     );
+  }
+
+  Widget _buildCreditItem(BuildContext context, {required String name, required String url}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          name,
+          style: const TextStyle(
+            color: Color(0xFFC6EFA6),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          url,
+          style: const TextStyle(
+            color: Color(0xFF6BCB1F),
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _handleTitleTap() async {
+    // Only trigger when showing "Track Starter" (not running)
+    if (_phaseLabel != 'Track Starter') return;
+
+    final now = DateTime.now();
+
+    // Reset count if more than 1 second has passed since last tap
+    if (_lastTitleTap != null && now.difference(_lastTitleTap!).inMilliseconds > 1000) {
+      _titleTapCount = 0;
+    }
+
+    _lastTitleTap = now;
+    _titleTapCount++;
+
+    // Open URL after 5 rapid taps
+    if (_titleTapCount >= 5) {
+      _titleTapCount = 0;
+      final uri = Uri.parse('https://usefulhub.net/');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    }
   }
 
   Widget _buildNumberInput({
@@ -1121,17 +1311,20 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
                                         // Phase label with glow - auto-fit to prevent overflow
-                                        FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          child: _buildGlowingText(
-                                            _phaseLabel,
-                                            GoogleFonts.bebasNeue(
-                                              fontSize: labelFontSize,
-                                              fontWeight: FontWeight.w700,
-                                              letterSpacing: 2,
-                                              color: const Color(0xFFE6FFD4),
+                                        GestureDetector(
+                                          onTap: _handleTitleTap,
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: _buildGlowingText(
+                                              _phaseLabel,
+                                              GoogleFonts.bebasNeue(
+                                                fontSize: labelFontSize,
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: 2,
+                                                color: const Color(0xFFE6FFD4),
+                                              ),
+                                              glowColor: progressColor.withOpacity(0.3),
                                             ),
-                                            glowColor: progressColor.withOpacity(0.3),
                                           ),
                                         ),
                                         if (showCountdown) ...[
@@ -1176,53 +1369,54 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                         ),
                 ),
               ),
-                Builder(
-                  builder: (context) {
-                    final screenWidth = MediaQuery.of(context).size.width;
-                    final isSmallScreen = screenWidth < 360;
-                    final horizontalPadding = isSmallScreen ? 16.0 : 24.0;
-                    final bottomPadding = isSmallScreen ? 20.0 : 32.0;
-                    final buttonSpacing = isSmallScreen ? 12.0 : 16.0;
+                if (!_isSettingsOpen)
+                  Builder(
+                    builder: (context) {
+                      final screenWidth = MediaQuery.of(context).size.width;
+                      final isSmallScreen = screenWidth < 360;
+                      final horizontalPadding = isSmallScreen ? 16.0 : 24.0;
+                      final bottomPadding = isSmallScreen ? 20.0 : 32.0;
+                      final buttonSpacing = isSmallScreen ? 12.0 : 16.0;
 
-                    return Padding(
-                      padding: EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, bottomPadding),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _buildGlowButton(
-                              onPressed: _isRunning && !_isPaused ? null : _startSequence,
-                              label: 'START',
-                              primaryColor: PhaseColors.ready,
-                              secondaryColor: PhaseColors.readySecondary,
-                              filled: true,
-                              isSmallScreen: isSmallScreen,
+                      return Padding(
+                        padding: EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, bottomPadding),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _buildGlowButton(
+                                onPressed: _isRunning && !_isPaused ? null : _startSequence,
+                                label: 'START',
+                                primaryColor: PhaseColors.ready,
+                                secondaryColor: PhaseColors.readySecondary,
+                                filled: true,
+                                isSmallScreen: isSmallScreen,
+                              ),
                             ),
-                          ),
-                          SizedBox(width: buttonSpacing),
-                          Expanded(
-                            child: _isPaused || _isFinished
-                                ? _buildGlowButton(
-                                    onPressed: _resetSequence,
-                                    label: 'RESET',
-                                    primaryColor: const Color(0xFFE85C5C),
-                                    secondaryColor: const Color(0xFFFF6B6B),
-                                    filled: false,
-                                    isSmallScreen: isSmallScreen,
-                                  )
-                                : _buildGlowButton(
-                                    onPressed: _isRunning ? _pauseSequence : null,
-                                    label: 'PAUSE',
-                                    primaryColor: PhaseColors.ready,
-                                    secondaryColor: PhaseColors.readySecondary,
-                                    filled: false,
-                                    isSmallScreen: isSmallScreen,
-                                  ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                            SizedBox(width: buttonSpacing),
+                            Expanded(
+                              child: _isPaused || _isFinished
+                                  ? _buildGlowButton(
+                                      onPressed: _resetSequence,
+                                      label: 'RESET',
+                                      primaryColor: const Color(0xFFE85C5C),
+                                      secondaryColor: const Color(0xFFFF6B6B),
+                                      filled: false,
+                                      isSmallScreen: isSmallScreen,
+                                    )
+                                  : _buildGlowButton(
+                                      onPressed: _isRunning ? _pauseSequence : null,
+                                      label: 'PAUSE',
+                                      primaryColor: PhaseColors.ready,
+                                      secondaryColor: PhaseColors.readySecondary,
+                                      filled: false,
+                                      isSmallScreen: isSmallScreen,
+                                    ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
               ],
             ),
           ),
