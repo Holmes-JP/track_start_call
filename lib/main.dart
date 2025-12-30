@@ -10,6 +10,47 @@ void main() {
   runApp(const StartCallApp());
 }
 
+// Audio option model
+class AudioOption {
+  final String name;
+  final String path;
+
+  const AudioOption({required this.name, required this.path});
+}
+
+// Audio options for each phase
+class AudioOptions {
+  static const List<AudioOption> onYourMarks = [
+    AudioOption(name: 'デフォルト', path: 'audio/On Your Marks/on_your_marks_defaults.mp3'),
+    AudioOption(name: 'On Your Marks (女性)', path: 'audio/On Your Marks/On_Your_Marks_Female.mp3'),
+    AudioOption(name: 'On Your Marks (男性)', path: 'audio/On Your Marks/On_Your_Marks_Male.mp3'),
+    AudioOption(name: '位置について (女性)', path: 'audio/On Your Marks/ichinitsuite_Female.mp3'),
+    AudioOption(name: '位置について (男性)', path: 'audio/On Your Marks/ichinitsuite_Male.mp3'),
+    AudioOption(name: '位置について (あみたろ)', path: 'audio/On Your Marks/ichinitsuite_amitaro.mp3'),
+  ];
+
+  static const List<AudioOption> set = [
+    AudioOption(name: 'デフォルト', path: 'audio/Set/set_defaults.mp3'),
+    AudioOption(name: 'Set (女性)', path: 'audio/Set/Set_Female.mp3'),
+    AudioOption(name: 'Set (男性)', path: 'audio/Set/Set_Male.mp3'),
+    AudioOption(name: '用意 (女性)', path: 'audio/Set/youi_Female.mp3'),
+    AudioOption(name: '用意 (男性)', path: 'audio/Set/youi_Male.mp3'),
+    AudioOption(name: '用意 (あみたろ)', path: 'audio/Set/youi_amitaro.mp3'),
+  ];
+
+  static const List<AudioOption> go = [
+    AudioOption(name: 'デフォルト (ピストル)', path: 'audio/Go/pan_defaults.mp3'),
+    AudioOption(name: 'ドン (あみたろ)', path: 'audio/Go/don_amitaro.mp3'),
+    AudioOption(name: 'スタート (あみたろ)', path: 'audio/Go/start_amitaro.mp3'),
+    AudioOption(name: '効果音 01', path: 'audio/Go/sound_effect_01.mp3'),
+    AudioOption(name: '効果音 02', path: 'audio/Go/sound_effect_02.mp3'),
+    AudioOption(name: '効果音 03', path: 'audio/Go/sound_effect_03.mp3'),
+    AudioOption(name: '効果音 04', path: 'audio/Go/sound_effect_04.mp3'),
+    AudioOption(name: '効果音 05', path: 'audio/Go/sound_effect_05.mp3'),
+    AudioOption(name: '効果音 06', path: 'audio/Go/sound_effect_06.mp3'),
+  ];
+}
+
 // Phase color definitions with gradients
 class PhaseColors {
   static const ready = Color(0xFF6BCB1F);
@@ -124,10 +165,15 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
   RangeValues _panRange = const RangeValues(0.8, 1.5);
   bool _randomPan = false;
 
+  // Selected audio paths
+  String _onAudioPath = AudioOptions.onYourMarks[0].path;
+  String _setAudioPath = AudioOptions.set[0].path;
+  String _goAudioPath = AudioOptions.go[0].path;
+
   bool _isRunning = false;
   bool _isPaused = false;
   bool _isFinished = false;
-  String _phaseLabel = 'Track Start Call';
+  String _phaseLabel = 'Track Starter';
   double _remainingSeconds = 0;
   double _phaseStartSeconds = 0;
   int _runToken = 0;
@@ -162,6 +208,10 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     final panMax = prefs.getDouble('pan_max') ?? _panRange.end;
     final randomPan = prefs.getBool('pan_random') ?? _randomPan;
 
+    final onAudioPath = prefs.getString('on_audio_path') ?? _onAudioPath;
+    final setAudioPath = prefs.getString('set_audio_path') ?? _setAudioPath;
+    final goAudioPath = prefs.getString('go_audio_path') ?? _goAudioPath;
+
     if (!mounted) {
       return;
     }
@@ -193,6 +243,9 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
       _panFixed = panFixed.clamp(0.5, 10);
       _panRange = clampedPan;
       _randomPan = randomPan;
+      _onAudioPath = onAudioPath;
+      _setAudioPath = setAudioPath;
+      _goAudioPath = goAudioPath;
     });
   }
 
@@ -217,6 +270,10 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
 
   void _saveBool(String key, bool value) {
     _prefs?.setBool(key, value);
+  }
+
+  void _saveString(String key, String value) {
+    _prefs?.setString(key, value);
   }
 
   double _randomBetween(double min, double max) {
@@ -345,7 +402,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     final onOk = await _runPhase(
       runId: runId,
       seconds: onDelay,
-      assetPath: 'audio/on_your_marks.mp3',
+      assetPath: _onAudioPath,
       labelOnPlay: 'On Your Marks',
       labelBeforePlay: 'Ready',
     );
@@ -359,7 +416,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     final setOk = await _runPhase(
       runId: runId,
       seconds: setDelay,
-      assetPath: 'audio/set.mp3',
+      assetPath: _setAudioPath,
       labelOnPlay: 'Set',
     );
     if (!setOk) {
@@ -372,7 +429,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     final panOk = await _runPhase(
       runId: runId,
       seconds: panDelay,
-      assetPath: 'audio/pan.mp3',
+      assetPath: _goAudioPath,
       labelOnPlay: 'Go',
     );
     if (!panOk) {
@@ -422,7 +479,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
       _isRunning = false;
       _isPaused = false;
       _isFinished = false;
-      _phaseLabel = 'Track Start Call';
+      _phaseLabel = 'Track Starter';
       _remainingSeconds = 0;
       _phaseStartSeconds = 0;
       _completedPhaseColors = [];
@@ -506,6 +563,14 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                           });
                         },
                         maxSeconds: 30,
+                        audioOptions: AudioOptions.onYourMarks,
+                        selectedAudioPath: _onAudioPath,
+                        onAudioChanged: (path) {
+                          sync(() {
+                            _onAudioPath = path;
+                            _saveString('on_audio_path', path);
+                          });
+                        },
                       ),
                       const SizedBox(height: 16),
                       _buildPhaseSetting(
@@ -533,6 +598,14 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                           });
                         },
                         maxSeconds: 60,
+                        audioOptions: AudioOptions.set,
+                        selectedAudioPath: _setAudioPath,
+                        onAudioChanged: (path) {
+                          sync(() {
+                            _setAudioPath = path;
+                            _saveString('set_audio_path', path);
+                          });
+                        },
                       ),
                       const SizedBox(height: 16),
                       _buildPhaseSetting(
@@ -560,6 +633,14 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                           });
                         },
                         maxSeconds: 10,
+                        audioOptions: AudioOptions.go,
+                        selectedAudioPath: _goAudioPath,
+                        onAudioChanged: (path) {
+                          sync(() {
+                            _goAudioPath = path;
+                            _saveString('go_audio_path', path);
+                          });
+                        },
                       ),
                     ],
                   ),
@@ -581,9 +662,18 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
     required ValueChanged<double> onFixedChanged,
     required ValueChanged<RangeValues> onRangeChanged,
     required double maxSeconds,
+    required List<AudioOption> audioOptions,
+    required String selectedAudioPath,
+    required ValueChanged<String> onAudioChanged,
   }) {
     const sliderMin = 0.5;
     final sliderMax = maxSeconds;
+
+    // Find selected audio name
+    final selectedAudio = audioOptions.firstWhere(
+      (option) => option.path == selectedAudioPath,
+      orElse: () => audioOptions.first,
+    );
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -598,12 +688,49 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFFE6FFD4),
+                child: PopupMenuButton<String>(
+                  enabled: !_isRunning,
+                  offset: const Offset(0, 40),
+                  color: const Color(0xFF1A2332),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: Color(0xFF3A4654)),
+                  ),
+                  onSelected: onAudioChanged,
+                  itemBuilder: (context) => audioOptions.map((option) {
+                    final isSelected = option.path == selectedAudioPath;
+                    return PopupMenuItem<String>(
+                      value: option.path,
+                      child: Text(
+                        option.name,
+                        style: TextStyle(
+                          color: isSelected
+                              ? const Color(0xFF6BCB1F)
+                              : const Color(0xFFC6EFA6),
+                          fontWeight:
+                              isSelected ? FontWeight.w600 : FontWeight.normal,
+                        ),
                       ),
+                    );
+                  }).toList(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFFE6FFD4),
+                            ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.keyboard_arrow_down,
+                        color: Color(0xFF9FBFA8),
+                        size: 20,
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const Text(
@@ -615,6 +742,17 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                 onChanged: _isRunning ? null : onRandomChanged,
               ),
             ],
+          ),
+          // Selected audio display
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              selectedAudio.name,
+              style: const TextStyle(
+                color: Color(0xFF6BCB1F),
+                fontSize: 12,
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           if (randomEnabled)
@@ -770,7 +908,7 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
         ? _remainingSeconds.toStringAsFixed(2)
         : '0.00';
     final showCountdown =
-        _phaseLabel.isNotEmpty && _phaseLabel != 'Track Start Call';
+        _phaseLabel.isNotEmpty && _phaseLabel != 'Track Starter';
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -785,12 +923,13 @@ class _StartCallHomePageState extends State<StartCallHomePage> {
                     children: [
                       IconButton(
                         onPressed: _openSettings,
-                        icon: const Icon(Icons.tune_rounded, size: 22),
+                        icon: const Icon(Icons.tune_rounded, size: 28),
                         style: IconButton.styleFrom(
                           backgroundColor: const Color(0xFF1A1A1A),
                           foregroundColor: const Color(0xFFE6FFD4),
+                          padding: const EdgeInsets.all(12),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(14),
                           ),
                         ),
                       ),
