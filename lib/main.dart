@@ -217,6 +217,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   double _remainingSeconds = 0;
   double _phaseStartSeconds = 0;
   int _runToken = 0;
+
+  // Previous phase color for smooth transition
+  Color? _previousPhaseColor;
   List<Color> _completedPhaseColors = [];
 
   // Animation controller for smooth progress
@@ -419,8 +422,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     }
 
     setState(() {
-      // Add completed color first, then reset progress - all in same setState
+      // Save current phase color as previous before switching
       if (completedPhaseColor != null) {
+        _previousPhaseColor = completedPhaseColor;
         _completedPhaseColors = [..._completedPhaseColors, completedPhaseColor];
       }
       _phaseLabel = labelOnPlay;
@@ -448,13 +452,14 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       _isFinished = false;
       _phaseLabel = 'Ready';
       _completedPhaseColors = [];
+      _previousPhaseColor = null;
     });
 
-    // Phase colors
-    const readyColor = Color(0xFF6BCB1F);
-    const onYourMarksColor = Color(0xFFFFB800);
-    const setColor = Color(0xFFFF6B35);
-    const goColor = Color(0xFFFF3366);
+    // Phase colors (use end colors from PhaseColors)
+    const readyColor = PhaseColors.ready;
+    const onYourMarksColor = PhaseColors.onYourMarks;
+    const setColor = PhaseColors.set;
+    const goColor = PhaseColors.go;
 
     do {
       // Reset for each loop iteration (random delays are recalculated each time)
@@ -463,6 +468,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         setState(() {
           _phaseLabel = 'Ready';
           _completedPhaseColors = [];
+          _previousPhaseColor = null;
         });
       }
 
@@ -573,6 +579,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       _phaseStartSeconds = 0;
       _animatedProgress = 0.0;
       _completedPhaseColors = [];
+      _previousPhaseColor = null;
     });
   }
 
@@ -1574,7 +1581,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                   progressColor: progressColor,
                   secondaryColor: secondaryColor,
                   backgroundColor: const Color(0xFF1A2332),
-                  completedPhaseColors: _completedPhaseColors,
+                  previousPhaseColor: _previousPhaseColor,
                 ),
                 child: Container(
                 constraints: BoxConstraints(
@@ -1730,7 +1737,7 @@ class RoundedRectProgressPainter extends CustomPainter {
   final Color secondaryColor;
   final Color backgroundColor;
   final Color glowColor;
-  final List<Color> completedPhaseColors;
+  final Color? previousPhaseColor;
 
   RoundedRectProgressPainter({
     required this.progress,
@@ -1739,7 +1746,7 @@ class RoundedRectProgressPainter extends CustomPainter {
     this.progressColor = const Color(0xFF6BCB1F),
     Color? secondaryColor,
     this.backgroundColor = const Color(0xFF2A3543),
-    this.completedPhaseColors = const [],
+    this.previousPhaseColor,
     Color? glowColor,
   })  : secondaryColor = secondaryColor ?? progressColor,
         glowColor = glowColor ?? progressColor.withOpacity(0.5);
@@ -1837,20 +1844,22 @@ class RoundedRectProgressPainter extends CustomPainter {
       ..strokeWidth = strokeWidth;
     canvas.drawPath(path, bgPaint);
 
-    // Draw completed phase colors (each takes full loop)
-    for (final color in completedPhaseColors) {
-      _drawProgressWithGlow(canvas, path, color, color, size);
-    }
-
-    // Draw current progress on top
-    if (progress <= 0) return;
-
     final pathMetrics = path.computeMetrics().first;
     final totalLength = pathMetrics.length;
-    final progressLength = totalLength * progress.clamp(0.0, 1.0);
-    final extractedPath = pathMetrics.extractPath(0, progressLength);
+    final clampedProgress = progress.clamp(0.0, 1.0);
+    final progressLength = totalLength * clampedProgress;
 
-    _drawProgressWithGlow(canvas, extractedPath, progressColor, secondaryColor, size);
+    // Draw previous phase color in the remaining part (being "eaten" by new progress)
+    if (previousPhaseColor != null && clampedProgress < 1.0) {
+      final remainingPath = pathMetrics.extractPath(progressLength, totalLength);
+      _drawProgressWithGlow(canvas, remainingPath, previousPhaseColor!, previousPhaseColor!, size);
+    }
+
+    // Draw current progress
+    if (clampedProgress > 0) {
+      final extractedPath = pathMetrics.extractPath(0, progressLength);
+      _drawProgressWithGlow(canvas, extractedPath, progressColor, secondaryColor, size);
+    }
   }
 
   @override
@@ -1858,6 +1867,6 @@ class RoundedRectProgressPainter extends CustomPainter {
     return oldDelegate.progress != progress ||
         oldDelegate.progressColor != progressColor ||
         oldDelegate.backgroundColor != backgroundColor ||
-        oldDelegate.completedPhaseColors.length != completedPhaseColors.length;
+        oldDelegate.previousPhaseColor != previousPhaseColor;
   }
 }
