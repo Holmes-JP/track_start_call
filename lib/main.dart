@@ -1796,7 +1796,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         final screenHeight = MediaQuery.of(context).size.height;
         final isSmallScreen = isLandscape ? screenHeight < 400 : screenWidth < 360;
         final horizontalPadding = isLandscape ? 0.0 : (isSmallScreen ? 16.0 : 24.0);
-        final bottomPadding = isLandscape ? 0.0 : (isSmallScreen ? 20.0 : 32.0);
+        final bottomPadding = isLandscape ? 0.0 : (isSmallScreen ? 40.0 : 56.0);
         final buttonSpacing = isLandscape ? 12.0 : (isSmallScreen ? 12.0 : 16.0);
 
         // Left button: START/PAUSE toggle
