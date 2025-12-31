@@ -9,12 +9,12 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 // Global theme notifier
-final themeNotifier = ValueNotifier<bool>(true); // true = dark mode
+final themeNotifier = ValueNotifier<bool>(false); // true = dark mode
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
-  themeNotifier.value = prefs.getBool('dark_mode') ?? true;
+  themeNotifier.value = prefs.getBool('dark_mode') ?? false;
   runApp(const StartCallApp());
 }
 
