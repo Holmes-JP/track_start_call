@@ -5,7 +5,8 @@
       "Bash(flutter analyze:*)",
       "Bash(/mnt/c/flutter/bin/flutter.bat analyze:*)",
       "Bash(/mnt/c/src/flutter/bin/flutter analyze:*)",
-      "Bash(dart analyze:*)"
+      "Bash(dart analyze:*)",
+      "Bash(/mnt/c/src/flutter/bin/dart analyze:*)"
     ]
   }
 }

@@ -6,9 +6,49 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
-void main() {
+// Global theme notifier
+final themeNotifier = ValueNotifier<bool>(true); // true = dark mode
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  themeNotifier.value = prefs.getBool('dark_mode') ?? true;
   runApp(const StartCallApp());
+}
+
+// Theme colors for dark and light modes
+class AppColors {
+  final bool isDark;
+
+  AppColors({required this.isDark});
+
+  // Background colors
+  Color get scaffoldBackground => isDark ? Colors.black : const Color(0xFFF5F5F5);
+  Color get cardBackground => isDark ? const Color(0xFF141B26) : Colors.white;
+  Color get sheetBackground => isDark ? const Color(0xFF0E131A) : const Color(0xFFF0F0F0);
+  Color get inputBackground => isDark ? const Color(0xFF1A2332) : const Color(0xFFE8E8E8);
+  Color get dragHandleColor => isDark ? const Color(0xFF3A4654) : const Color(0xFFBDBDBD);
+
+  // Border/shadow colors
+  Color get cardBorder => isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0);
+  Color get inputBorder => isDark ? const Color(0xFF3A4654) : const Color(0xFFBDBDBD);
+
+  // Text colors
+  Color get primaryText => isDark ? Colors.white : Colors.black87;
+  Color get secondaryText => isDark ? Colors.white70 : Colors.black54;
+
+  // Accent colors (same for both themes)
+  static const accent = Color(0xFF6BCB1F);
+  static const accentDark = Color(0xFF1D2B21);
+
+  // Settings button background
+  Color get settingsButtonBackground => isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE0E0E0);
+
+  // Timer panel background
+  Color get timerPanelBackground => isDark ? const Color(0xFF141B26) : Colors.white;
+  Color get timerProgressBackground => isDark ? const Color(0xFF1A2332) : const Color(0xFFE0E0E0);
 }
 
 // Audio option model
@@ -126,47 +166,57 @@ class PhaseColors {
 class StartCallApp extends StatelessWidget {
   const StartCallApp({super.key});
 
-  @override
-  Widget build(BuildContext context) {
+  ThemeData _buildTheme(bool isDark) {
+    final brightness = isDark ? Brightness.dark : Brightness.light;
     final baseTheme = ThemeData(
       colorScheme: ColorScheme.fromSeed(
         seedColor: const Color(0xFF6BCB1F),
-        brightness: Brightness.dark,
+        brightness: brightness,
       ),
       useMaterial3: true,
     );
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Starter Pistol',
-      theme: baseTheme.copyWith(
-        textTheme: GoogleFonts.spaceGroteskTextTheme(baseTheme.textTheme),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          centerTitle: false,
-        ),
-        cardTheme: const CardThemeData(
-          elevation: 0.5,
-          color: Color(0xFF141B26),
-          surfaceTintColor: Color(0xFF141B26),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(16)),
-          ),
-        ),
-        sliderTheme: const SliderThemeData(
-          trackHeight: 3,
-          activeTrackColor: Color(0xFF6BCB1F),
-          inactiveTrackColor: Color(0xFF26332A),
-          thumbColor: Color(0xFF6BCB1F),
-          overlayColor: Color(0x336BCB1F),
-        ),
-        switchTheme: const SwitchThemeData(
-          thumbColor: WidgetStatePropertyAll(Color(0xFF6BCB1F)),
-          trackColor: WidgetStatePropertyAll(Color(0xFF1D2B21)),
+    return baseTheme.copyWith(
+      textTheme: GoogleFonts.spaceGroteskTextTheme(baseTheme.textTheme),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: false,
+      ),
+      cardTheme: CardThemeData(
+        elevation: 0.5,
+        color: isDark ? const Color(0xFF141B26) : Colors.white,
+        surfaceTintColor: isDark ? const Color(0xFF141B26) : Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
         ),
       ),
-      home: const StartCallHomePage(),
+      sliderTheme: SliderThemeData(
+        trackHeight: 3,
+        activeTrackColor: const Color(0xFF6BCB1F),
+        inactiveTrackColor: isDark ? const Color(0xFF26332A) : const Color(0xFFD0D0D0),
+        thumbColor: const Color(0xFF6BCB1F),
+        overlayColor: const Color(0x336BCB1F),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: const WidgetStatePropertyAll(Color(0xFF6BCB1F)),
+        trackColor: WidgetStatePropertyAll(isDark ? const Color(0xFF1D2B21) : const Color(0xFFD0D0D0)),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: themeNotifier,
+      builder: (context, isDark, child) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'Starter Pistol',
+          theme: _buildTheme(isDark),
+          home: const StartCallHomePage(),
+        );
+      },
     );
   }
 }
@@ -179,9 +229,10 @@ class StartCallHomePage extends StatefulWidget {
 }
 
 class _StartCallHomePageState extends State<StartCallHomePage>
-    with SingleTickerProviderStateMixin {
-  final _player = AudioPlayer();
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  late AudioPlayer _player;
   final _random = Random();
+  bool _isInBackground = false;
   SharedPreferences? _prefs;
 
   double _onFixed = 5.0;
@@ -228,6 +279,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _initAudioPlayer();
     _progressController = AnimationController(vsync: this);
     _progressController.addListener(() {
       setState(() {
@@ -237,8 +290,45 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     _loadPrefs();
   }
 
+  Future<void> _initAudioPlayer() async {
+    _player = AudioPlayer();
+    // Configure audio player for background playback
+    await _player.setPlayerMode(PlayerMode.mediaPlayer);
+    await _player.setAudioContext(AudioContext(
+      iOS: AudioContextIOS(
+        category: AVAudioSessionCategory.playback,
+        options: {
+          AVAudioSessionOptions.mixWithOthers,
+        },
+      ),
+      android: AudioContextAndroid(
+        isSpeakerphoneOn: false,
+        stayAwake: true,
+        contentType: AndroidContentType.music,
+        usageType: AndroidUsageType.media,
+        audioFocus: AndroidAudioFocus.gain,
+      ),
+    ));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    final wasInBackground = _isInBackground;
+    _isInBackground = state == AppLifecycleState.paused ||
+                      state == AppLifecycleState.inactive;
+
+    // When coming back to foreground, trigger UI rebuild
+    if (wasInBackground && !_isInBackground && mounted) {
+      setState(() {});
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // Ensure wakelock is disabled when widget is disposed
+    WakelockPlus.disable();
     _progressController.dispose();
     _player.dispose();
     super.dispose();
@@ -355,41 +445,48 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     _remainingSeconds = seconds;
     _animatedProgress = 0.0;
 
-    // Setup animation controller for smooth progress
-    _progressController.stop();
-    _progressController.value = 0.0;
-    _progressController.duration = Duration(milliseconds: (seconds * 1000).round());
+    if (mounted && !_isInBackground) setState(() {});
 
-    if (mounted) setState(() {});
+    // Use real-time clock instead of AnimationController for background support
+    final totalMs = (seconds * 1000).round();
+    var elapsedMs = 0;
+    var lastTime = DateTime.now();
 
-    // Start the animation
-    _progressController.forward();
-
-    // Wait for the animation to complete while handling pause
-    while (_progressController.value < 1.0) {
+    while (elapsedMs < totalMs) {
       if (!mounted || runId != _runToken) {
-        _progressController.stop();
         return false;
       }
 
       if (_isPaused) {
-        _progressController.stop();
+        // While paused, don't count time
         while (_isPaused && mounted && runId == _runToken) {
           await Future.delayed(const Duration(milliseconds: 50));
         }
         if (!mounted || runId != _runToken) return false;
-        _progressController.forward();
+        lastTime = DateTime.now(); // Reset timer after pause
       }
 
-      // Update remaining seconds based on animation progress
-      _remainingSeconds = seconds * (1.0 - _progressController.value);
+      await Future.delayed(const Duration(milliseconds: 16)); // ~60fps
 
-      await Future.delayed(const Duration(milliseconds: 16)); // ~60fps check
+      final now = DateTime.now();
+      final deltaMs = now.difference(lastTime).inMilliseconds;
+      lastTime = now;
+      elapsedMs += deltaMs;
+
+      // Update progress
+      final progress = (elapsedMs / totalMs).clamp(0.0, 1.0);
+      _remainingSeconds = seconds * (1.0 - progress);
+      _animatedProgress = progress;
+
+      // Only update UI when in foreground
+      if (mounted && !_isInBackground) {
+        setState(() {});
+      }
     }
 
     _remainingSeconds = 0;
     _animatedProgress = 1.0;
-    if (mounted) setState(() {});
+    if (mounted && !_isInBackground) setState(() {});
 
     return mounted && runId == _runToken;
   }
@@ -406,11 +503,12 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       return false;
     }
 
-    setState(() {
-      if (labelBeforePlay != null) {
-        _phaseLabel = labelBeforePlay;
-      }
-    });
+    // Update state directly for background support
+    if (labelBeforePlay != null) {
+      _phaseLabel = labelBeforePlay;
+    }
+    if (mounted && !_isInBackground) setState(() {});
+
     final waitOk = await _waitWithPause(runId, seconds);
     if (!waitOk) {
       return false;
@@ -420,15 +518,14 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       return false;
     }
 
-    setState(() {
-      // Save current phase color as previous before switching
-      if (completedPhaseColor != null) {
-        _previousPhaseColor = completedPhaseColor;
-        _completedPhaseColors = [..._completedPhaseColors, completedPhaseColor];
-      }
-      _phaseLabel = labelOnPlay;
-      _animatedProgress = 0.0;
-    });
+    // Update state directly for background support
+    if (completedPhaseColor != null) {
+      _previousPhaseColor = completedPhaseColor;
+      _completedPhaseColors = [..._completedPhaseColors, completedPhaseColor];
+    }
+    _phaseLabel = labelOnPlay;
+    _animatedProgress = 0.0;
+    if (mounted && !_isInBackground) setState(() {});
     // Only play audio if path is not empty
     if (assetPath.isNotEmpty) {
       await _player.play(AssetSource(assetPath));
@@ -438,24 +535,25 @@ class _StartCallHomePageState extends State<StartCallHomePage>
 
   Future<void> _startSequence() async {
     if (_isRunning && _isPaused) {
-      setState(() {
-        _isPaused = false;
-      });
+      _isPaused = false;
+      if (mounted && !_isInBackground) setState(() {});
       return;
     }
     if (_isRunning) {
       return;
     }
 
+    // Enable wakelock to keep the app running in background
+    WakelockPlus.enable();
+
     final runId = ++_runToken;
-    setState(() {
-      _isRunning = true;
-      _isPaused = false;
-      _isFinished = false;
-      _phaseLabel = 'Ready';
-      _completedPhaseColors = [];
-      _previousPhaseColor = null;
-    });
+    _isRunning = true;
+    _isPaused = false;
+    _isFinished = false;
+    _phaseLabel = 'Ready';
+    _completedPhaseColors = [];
+    _previousPhaseColor = null;
+    if (mounted && !_isInBackground) setState(() {});
 
     // Phase colors (use end colors from PhaseColors)
     const readyColor = PhaseColors.ready;
@@ -467,11 +565,10 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       // Reset for each loop iteration (random delays are recalculated each time)
       if (_loopEnabled && _completedPhaseColors.isNotEmpty) {
         // Starting a new loop iteration
-        setState(() {
-          _phaseLabel = 'Ready';
-          _completedPhaseColors = [];
-          _previousPhaseColor = null;
-        });
+        _phaseLabel = 'Ready';
+        _completedPhaseColors = [];
+        _previousPhaseColor = null;
+        if (mounted && !_isInBackground) setState(() {});
       }
 
       final onDelay = _getDelay(
@@ -523,10 +620,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       if (!panOk) {
         return;
       }
-      setState(() {
-        _completedPhaseColors = [..._completedPhaseColors, goColor];
-        _remainingSeconds = 0;
-      });
+      _completedPhaseColors = [..._completedPhaseColors, goColor];
+      _remainingSeconds = 0;
+      if (mounted && !_isInBackground) setState(() {});
 
       if (!mounted || runId != _runToken) {
         return;
@@ -541,11 +637,13 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       }
     } while (_loopEnabled && mounted && runId == _runToken);
 
-    setState(() {
-      _isRunning = false;
-      _isPaused = false;
-      _isFinished = true;
-    });
+    // Disable wakelock when sequence ends
+    WakelockPlus.disable();
+
+    _isRunning = false;
+    _isPaused = false;
+    _isFinished = true;
+    if (mounted && !_isInBackground) setState(() {});
   }
 
   Future<void> _pauseSequence() async {
@@ -556,33 +654,32 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     if (!mounted) {
       return;
     }
-    setState(() {
-      _isPaused = true;
-    });
+    _isPaused = true;
+    if (!_isInBackground) setState(() {});
   }
 
   Future<void> _resetSequence() async {
     if (!_isRunning && !_isPaused && !_isFinished) {
       return;
     }
+    // Disable wakelock when reset
+    WakelockPlus.disable();
+
     _runToken++;
-    _progressController.stop();
-    _progressController.value = 0.0;
     await _player.stop();
     if (!mounted) {
       return;
     }
-    setState(() {
-      _isRunning = false;
-      _isPaused = false;
-      _isFinished = false;
-      _phaseLabel = 'Starter Pistol';
-      _remainingSeconds = 0;
-      _phaseStartSeconds = 0;
-      _animatedProgress = 0.0;
-      _completedPhaseColors = [];
-      _previousPhaseColor = null;
-    });
+    _isRunning = false;
+    _isPaused = false;
+    _isFinished = false;
+    _phaseLabel = 'Starter Pistol';
+    _remainingSeconds = 0;
+    _phaseStartSeconds = 0;
+    _animatedProgress = 0.0;
+    _completedPhaseColors = [];
+    _previousPhaseColor = null;
+    if (!_isInBackground) setState(() {});
   }
 
   Future<void> _openSettings() async {
@@ -608,11 +705,12 @@ class _StartCallHomePageState extends State<StartCallHomePage>
 
             final maxHeight = MediaQuery.of(context).size.height * 0.85;
 
+            final isDark = themeNotifier.value;
             return Container(
               constraints: BoxConstraints(maxHeight: maxHeight),
-              decoration: const BoxDecoration(
-                color: Color(0xFF0E131A),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0E131A) : const Color(0xFFF0F0F0),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -625,7 +723,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                         width: 48,
                         height: 5,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF3A4654),
+                          color: isDark ? const Color(0xFF3A4654) : const Color(0xFFBDBDBD),
                           borderRadius: BorderRadius.circular(20),
                         ),
                       ),
@@ -646,19 +744,73 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                             '設定',
                             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                                   fontWeight: FontWeight.w700,
-                                  color: Colors.white,
+                                  color: isDark ? Colors.white : Colors.black87,
                                 ),
                           ),
                           const SizedBox(height: 16),
+                          // Theme setting
+                          Container(
+                            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF141B26) : Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                                  spreadRadius: 1,
+                                  blurRadius: 0,
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      isDark ? Icons.dark_mode : Icons.light_mode,
+                                      color: const Color(0xFF6BCB1F),
+                                      size: 28,
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Text(
+                                      'ダークモード',
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark ? Colors.white : Colors.black87,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(
+                                  height: 32,
+                                  width: 52,
+                                  child: FittedBox(
+                                    fit: BoxFit.contain,
+                                    child: Switch(
+                                      value: isDark,
+                                      onChanged: (value) async {
+                                        themeNotifier.value = value;
+                                        final prefs = await SharedPreferences.getInstance();
+                                        prefs.setBool('dark_mode', value);
+                                        modalSetState(() {});
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
                           // Loop setting
                           Container(
                             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF141B26),
+                              color: isDark ? const Color(0xFF141B26) : Colors.white,
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFF2A3543),
+                                  color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
                                   spreadRadius: 1,
                                   blurRadius: 0,
                                 ),
@@ -679,7 +831,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                       'ループ',
                                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                             fontWeight: FontWeight.w600,
-                                            color: Colors.white,
+                                            color: isDark ? Colors.white : Colors.black87,
                                           ),
                                     ),
                                   ],
@@ -830,11 +982,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF141B26),
+                                color: isDark ? const Color(0xFF141B26) : Colors.white,
                                 borderRadius: BorderRadius.circular(16),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: const Color(0xFF2A3543),
+                                    color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
                                     spreadRadius: 1,
                                     blurRadius: 0,
                                   ),
@@ -847,9 +999,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(
+                                        Icon(
                                           Icons.info_outline,
-                                          color: Colors.white70,
+                                          color: isDark ? Colors.white70 : Colors.black54,
                                           size: 26,
                                         ),
                                         const SizedBox(width: 14),
@@ -857,7 +1009,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                           child: Text(
                                             'クレジット',
                                             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                                  color: Colors.white,
+                                                  color: isDark ? Colors.white : Colors.black87,
                                                 ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -865,9 +1017,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                       ],
                                     ),
                                   ),
-                                  const Icon(
+                                  Icon(
                                     Icons.chevron_right,
-                                    color: Colors.white70,
+                                    color: isDark ? Colors.white70 : Colors.black54,
                                     size: 28,
                                   ),
                                 ],
@@ -899,13 +1051,14 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       isScrollControlled: true,
       builder: (context) {
         final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
+        final isDark = themeNotifier.value;
         return Container(
           constraints: BoxConstraints(
             maxHeight: MediaQuery.of(context).size.height * 0.7,
           ),
-          decoration: const BoxDecoration(
-            color: Color(0xFF0E131A),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0E131A) : const Color(0xFFF0F0F0),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -918,7 +1071,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                     width: 48,
                     height: 5,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF3A4654),
+                      color: isDark ? const Color(0xFF3A4654) : const Color(0xFFBDBDBD),
                       borderRadius: BorderRadius.circular(20),
                     ),
                   ),
@@ -939,7 +1092,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                         'クレジット',
                         style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                               fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                              color: isDark ? Colors.white : Colors.black87,
                             ),
                       ),
                       const SizedBox(height: 24),
@@ -948,11 +1101,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                         width: double.infinity,
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF141B26),
+                          color: isDark ? const Color(0xFF141B26) : Colors.white,
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF2A3543),
+                              color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
                               spreadRadius: 1,
                               blurRadius: 0,
                             ),
@@ -974,7 +1127,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                     '音声素材',
                                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                           fontWeight: FontWeight.w600,
-                                          color: Colors.white,
+                                          color: isDark ? Colors.white : Colors.black87,
                                         ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -986,12 +1139,14 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                               context,
                               name: '音読さん',
                               url: 'https://ondoku3.com/',
+                              isDark: isDark,
                             ),
                             const SizedBox(height: 16),
                             _buildCreditItem(
                               context,
                               name: 'On-Jin ～音人～',
                               url: 'https://on-jin.com/',
+                              isDark: isDark,
                             ),
                           ],
                         ),
@@ -1007,14 +1162,14 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     );
   }
 
-  Widget _buildCreditItem(BuildContext context, {required String name, required String url}) {
+  Widget _buildCreditItem(BuildContext context, {required String name, required String url, bool isDark = true}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           name,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black87,
             fontSize: 17,
             fontWeight: FontWeight.w500,
           ),
@@ -1093,6 +1248,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   }) {
     const sliderMin = 0.5;
     final sliderMax = maxSeconds;
+    final isDark = themeNotifier.value;
 
     // Find selected audio name
     final selectedAudio = audioOptions.firstWhere(
@@ -1103,11 +1259,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF141B26),
+        color: isDark ? const Color(0xFF141B26) : Colors.white,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2A3543),
+            color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
             spreadRadius: 1,
             blurRadius: 0,
           ),
@@ -1124,7 +1280,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                 padding: EdgeInsets.zero,
                 offset: const Offset(0, 48),
                 elevation: 8,
-                color: const Color(0xFF1A2332),
+                color: isDark ? const Color(0xFF1A2332) : Colors.white,
                 shadowColor: Colors.black,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1141,7 +1297,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                         fontSize: 16,
                         color: isSelected
                             ? const Color(0xFF6BCB1F)
-                            : Colors.white,
+                            : (isDark ? Colors.white : Colors.black87),
                         fontWeight:
                             isSelected ? FontWeight.w600 : FontWeight.normal,
                       ),
@@ -1155,13 +1311,13 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                       title,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                            color: isDark ? Colors.white : Colors.black87,
                           ),
                     ),
                     const SizedBox(width: 6),
-                    const Icon(
+                    Icon(
                       Icons.keyboard_arrow_down,
-                      color: Colors.white70,
+                      color: isDark ? Colors.white70 : Colors.black54,
                       size: 26,
                     ),
                   ],
@@ -1206,9 +1362,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                   },
                 ),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   '〜',
-                  style: TextStyle(color: Colors.white70, fontSize: 16),
+                  style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontSize: 16),
                 ),
                 const SizedBox(width: 8),
                 _buildNumberInput(
@@ -1274,7 +1430,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
             children: [
               Text(
                 'ランダム',
-                style: const TextStyle(color: Colors.white70, fontSize: 15),
+                style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontSize: 15),
               ),
               const SizedBox(width: 6),
               SizedBox(
@@ -1399,9 +1555,10 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         : '0.00';
     final showCountdown =
         _phaseLabel.isNotEmpty && _phaseLabel != 'Starter Pistol';
+    final isDark = themeNotifier.value;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: isDark ? Colors.black : const Color(0xFFF5F5F5),
       body: SafeArea(
         child: OrientationBuilder(
           builder: (context, orientation) {
@@ -1417,6 +1574,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   }
 
   Widget _buildPortraitLayout(String countdownText, bool showCountdown) {
+    final isDark = themeNotifier.value;
     return Column(
       children: [
         Padding(
@@ -1427,8 +1585,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                 onPressed: _openSettings,
                 icon: const Icon(Icons.tune_rounded, size: 28),
                 style: IconButton.styleFrom(
-                  backgroundColor: const Color(0xFF1A1A1A),
-                  foregroundColor: Colors.white,
+                  backgroundColor: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE0E0E0),
+                  foregroundColor: isDark ? Colors.white : Colors.black87,
                   padding: const EdgeInsets.all(12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
@@ -1450,6 +1608,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   }
 
   Widget _buildLandscapeLayout(String countdownText, bool showCountdown) {
+    final isDark = themeNotifier.value;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -1462,8 +1621,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                 onPressed: _openSettings,
                 icon: const Icon(Icons.tune_rounded, size: 22),
                 style: IconButton.styleFrom(
-                  backgroundColor: const Color(0xFF1A1A1A),
-                  foregroundColor: Colors.white,
+                  backgroundColor: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE0E0E0),
+                  foregroundColor: isDark ? Colors.white : Colors.black87,
                   padding: const EdgeInsets.all(8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -1496,6 +1655,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     if (_phaseLabel.isEmpty) {
       return const SizedBox.shrink();
     }
+
+    final isDark = themeNotifier.value;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1541,7 +1702,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                   strokeWidth: isSmallScreen ? 3 : 4,
                   progressColor: progressColor,
                   secondaryColor: secondaryColor,
-                  backgroundColor: const Color(0xFF1A2332),
+                  backgroundColor: isDark ? const Color(0xFF1A2332) : const Color(0xFFE0E0E0),
                   previousPhaseColor: _previousPhaseColor,
                 ),
                 child: Container(
@@ -1555,7 +1716,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                 ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(borderRadius),
-                  color: const Color(0xFF141B26),
+                  color: isDark ? const Color(0xFF141B26) : Colors.white,
                   boxShadow: [
                     BoxShadow(
                       color: progressColor.withOpacity(0.12),
@@ -1579,7 +1740,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                             fontSize: labelFontSize,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 2,
-                            color: Colors.white,
+                            color: isDark ? Colors.white : Colors.black87,
                           ),
                           glowColor: progressColor.withOpacity(0.3),
                         ),
@@ -1782,14 +1943,32 @@ class RoundedRectProgressPainter extends CustomPainter {
       [0.0, 1.0],
     );
 
-    // Single glow layer (optimized from 3 layers)
-    final glowPaint = Paint()
+    // Outer glow layer (large, soft)
+    final outerGlowPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth + 6
+      ..strokeWidth = strokeWidth + 16
       ..strokeCap = StrokeCap.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8)
-      ..color = primary.withOpacity(0.4);
-    canvas.drawPath(progressPath, glowPaint);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16)
+      ..color = primary.withOpacity(0.3);
+    canvas.drawPath(progressPath, outerGlowPaint);
+
+    // Middle glow layer
+    final middleGlowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth + 10
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10)
+      ..color = primary.withOpacity(0.5);
+    canvas.drawPath(progressPath, middleGlowPaint);
+
+    // Inner glow layer (bright, focused)
+    final innerGlowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth + 4
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4)
+      ..color = primary.withOpacity(0.7);
+    canvas.drawPath(progressPath, innerGlowPaint);
 
     // Draw main progress line with gradient
     final progressPaint = Paint()
@@ -1906,6 +2085,7 @@ class _NumberInputFieldState extends State<_NumberInputField> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = themeNotifier.value;
     return SizedBox(
       width: widget.width,
       height: 50,
@@ -1914,30 +2094,30 @@ class _NumberInputFieldState extends State<_NumberInputField> {
         enabled: widget.enabled,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: isDark ? Colors.white : Colors.black87,
           fontSize: 17,
           fontWeight: FontWeight.w600,
         ),
         decoration: InputDecoration(
           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
           filled: true,
-          fillColor: const Color(0xFF1A2332),
+          fillColor: isDark ? const Color(0xFF1A2332) : const Color(0xFFE8E8E8),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF3A4654)),
+            borderSide: BorderSide(color: isDark ? const Color(0xFF3A4654) : const Color(0xFFBDBDBD)),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF3A4654)),
+            borderSide: BorderSide(color: isDark ? const Color(0xFF3A4654) : const Color(0xFFBDBDBD)),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: Color(0xFF6BCB1F), width: 2),
           ),
           suffixText: 's',
-          suffixStyle: const TextStyle(
-            color: Colors.white70,
+          suffixStyle: TextStyle(
+            color: isDark ? Colors.white70 : Colors.black54,
             fontSize: 15,
           ),
         ),
