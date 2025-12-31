@@ -21,29 +21,28 @@ class AudioOption {
 
 // Audio options for each phase
 class AudioOptions {
+  static const String noAudio = ''; // Empty path means no audio
+
   static const List<AudioOption> onYourMarks = [
+    AudioOption(name: '音声なし', path: ''),
     AudioOption(name: 'On Your Marks (男性)', path: 'audio/On Your Marks/On_Your_Marks_Male.mp3'),
     AudioOption(name: 'On Your Marks (女性)', path: 'audio/On Your Marks/On_Your_Marks_Female.mp3'),
     AudioOption(name: '位置について (男性)', path: 'audio/On Your Marks/ichinitsuite_Male.mp3'),
     AudioOption(name: '位置について (女性)', path: 'audio/On Your Marks/ichinitsuite_Female.mp3'),
-    AudioOption(name: '位置について (あみたろ)', path: 'audio/On Your Marks/ichinitsuite_amitaro.mp3'),
   ];
 
   static const List<AudioOption> set = [
+    AudioOption(name: '音声なし', path: ''),
     AudioOption(name: 'Set (男性)', path: 'audio/Set/Set_Male.mp3'),
     AudioOption(name: 'Set (女性)', path: 'audio/Set/Set_Female.mp3'),
     AudioOption(name: '用意 (男性)', path: 'audio/Set/youi_Male.mp3'),
     AudioOption(name: '用意 (女性)', path: 'audio/Set/youi_Female.mp3'),
-    AudioOption(name: '用意 (あみたろ)', path: 'audio/Set/youi_amitaro.mp3'),
   ];
 
   static const List<AudioOption> go = [
     AudioOption(name: 'ピストル 01', path: 'audio/Go/pan_01.mp3'),
     AudioOption(name: 'ピストル 02', path: 'audio/Go/pan_02.mp3'),
     AudioOption(name: 'ピストル 03', path: 'audio/Go/pan_03.mp3'),
-    AudioOption(name: 'ピストル 04', path: 'audio/Go/pan_04.mp3'),
-    AudioOption(name: 'ドン (あみたろ)', path: 'audio/Go/don_amitaro.mp3'),
-    AudioOption(name: 'スタート (あみたろ)', path: 'audio/Go/start_amitaro.mp3'),
   ];
 }
 
@@ -139,7 +138,7 @@ class StartCallApp extends StatelessWidget {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: '陸上スタートコール',
+      title: 'Starter Pistol',
       theme: baseTheme.copyWith(
         textTheme: GoogleFonts.spaceGroteskTextTheme(baseTheme.textTheme),
         appBarTheme: const AppBarTheme(
@@ -198,15 +197,15 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   bool _randomPan = false;
 
   // Selected audio paths
-  String _onAudioPath = AudioOptions.onYourMarks[0].path;
-  String _setAudioPath = AudioOptions.set[0].path;
+  String _onAudioPath = AudioOptions.onYourMarks[1].path; // On Your Marks (男性)
+  String _setAudioPath = AudioOptions.set[1].path; // Set (男性)
   String _goAudioPath = AudioOptions.go[0].path;
 
   bool _isRunning = false;
   bool _isPaused = false;
   bool _isFinished = false;
   bool _isSettingsOpen = false;
-  String _phaseLabel = 'Track Starter';
+  String _phaseLabel = 'Starter Pistol';
 
   // Loop setting
   bool _loopEnabled = false;
@@ -280,7 +279,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     final clampedSet = _clampRange(
       RangeValues(setMin, setMax),
       min: 0.5,
-      max: 60,
+      max: 40,
     );
     final clampedPan = _clampRange(
       RangeValues(panMin, panMax),
@@ -293,7 +292,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       _onFixed = onFixed.clamp(0.5, 30);
       _onRange = clampedOn;
       _randomOn = randomOn;
-      _setFixed = setFixed.clamp(0.5, 60);
+      _setFixed = setFixed.clamp(0.5, 40);
       _setRange = clampedSet;
       _randomSet = randomSet;
       _panFixed = panFixed.clamp(0.5, 10);
@@ -430,7 +429,10 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       _phaseLabel = labelOnPlay;
       _animatedProgress = 0.0;
     });
-    await _player.play(AssetSource(assetPath));
+    // Only play audio if path is not empty
+    if (assetPath.isNotEmpty) {
+      await _player.play(AssetSource(assetPath));
+    }
     return mounted && runId == _runToken;
   }
 
@@ -574,7 +576,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       _isRunning = false;
       _isPaused = false;
       _isFinished = false;
-      _phaseLabel = 'Track Starter';
+      _phaseLabel = 'Starter Pistol';
       _remainingSeconds = 0;
       _phaseStartSeconds = 0;
       _animatedProgress = 0.0;
@@ -642,18 +644,18 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                         children: [
                           Text(
                             '設定',
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                                   fontWeight: FontWeight.w700,
-                                  color: const Color(0xFFE6FFD4),
+                                  color: Colors.white,
                                 ),
                           ),
                           const SizedBox(height: 16),
                           // Loop setting
                           Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                             decoration: BoxDecoration(
                               color: const Color(0xFF141B26),
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
                                   color: const Color(0xFF2A3543),
@@ -670,21 +672,21 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                     const Icon(
                                       Icons.repeat,
                                       color: Color(0xFF6BCB1F),
-                                      size: 20,
+                                      size: 28,
                                     ),
-                                    const SizedBox(width: 12),
+                                    const SizedBox(width: 14),
                                     Text(
                                       'ループ',
-                                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                             fontWeight: FontWeight.w600,
-                                            color: const Color(0xFFE6FFD4),
+                                            color: Colors.white,
                                           ),
                                     ),
                                   ],
                                 ),
                                 SizedBox(
-                                  height: 24,
-                                  width: 40,
+                                  height: 32,
+                                  width: 52,
                                   child: FittedBox(
                                     fit: BoxFit.contain,
                                     child: Switch(
@@ -736,7 +738,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                           });
                         },
                         onPreviewAudio: () {
-                          _player.play(AssetSource(_onAudioPath));
+                          if (_onAudioPath.isNotEmpty) {
+                            _player.play(AssetSource(_onAudioPath));
+                          }
                         },
                       ),
                       const SizedBox(height: 16),
@@ -764,7 +768,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                             _saveDouble('set_max', values.end);
                           });
                         },
-                        maxSeconds: 60,
+                        maxSeconds: 40,
                         audioOptions: AudioOptions.set,
                         selectedAudioPath: _setAudioPath,
                         onAudioChanged: (path) {
@@ -774,7 +778,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                           });
                         },
                         onPreviewAudio: () {
-                          _player.play(AssetSource(_setAudioPath));
+                          if (_setAudioPath.isNotEmpty) {
+                            _player.play(AssetSource(_setAudioPath));
+                          }
                         },
                       ),
                       const SizedBox(height: 16),
@@ -812,7 +818,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                           });
                         },
                         onPreviewAudio: () {
-                          _player.play(AssetSource(_goAudioPath));
+                          if (_goAudioPath.isNotEmpty) {
+                            _player.play(AssetSource(_goAudioPath));
+                          }
                         },
                       ),
                       const SizedBox(height: 24),
@@ -820,10 +828,10 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                           GestureDetector(
                             onTap: () => _showCredits(context),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
                               decoration: BoxDecoration(
                                 color: const Color(0xFF141B26),
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(16),
                                 boxShadow: [
                                   BoxShadow(
                                     color: const Color(0xFF2A3543),
@@ -841,15 +849,15 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                       children: [
                                         const Icon(
                                           Icons.info_outline,
-                                          color: Color(0xFF9FBFA8),
-                                          size: 20,
+                                          color: Colors.white70,
+                                          size: 26,
                                         ),
-                                        const SizedBox(width: 12),
+                                        const SizedBox(width: 14),
                                         Flexible(
                                           child: Text(
                                             'クレジット',
-                                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                                  color: const Color(0xFFE6FFD4),
+                                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                                  color: Colors.white,
                                                 ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -859,8 +867,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                   ),
                                   const Icon(
                                     Icons.chevron_right,
-                                    color: Color(0xFF9FBFA8),
-                                    size: 24,
+                                    color: Colors.white70,
+                                    size: 28,
                                   ),
                                 ],
                               ),
@@ -929,16 +937,16 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                     children: [
                       Text(
                         'クレジット',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                               fontWeight: FontWeight.w700,
-                              color: const Color(0xFFE6FFD4),
+                              color: Colors.white,
                             ),
                       ),
                       const SizedBox(height: 24),
                       // Audio Credits Section
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
                           color: const Color(0xFF141B26),
                           borderRadius: BorderRadius.circular(16),
@@ -958,34 +966,28 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                 const Icon(
                                   Icons.audiotrack,
                                   color: Color(0xFF6BCB1F),
-                                  size: 20,
+                                  size: 26,
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 10),
                                 Flexible(
                                   child: Text(
                                     '音声素材',
-                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                           fontWeight: FontWeight.w600,
-                                          color: const Color(0xFFE6FFD4),
+                                          color: Colors.white,
                                         ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                            _buildCreditItem(
-                              context,
-                              name: 'あみたろの声素材工房',
-                              url: 'https://amitaro.net/',
-                            ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 20),
                             _buildCreditItem(
                               context,
                               name: '音読さん',
                               url: 'https://ondoku3.com/',
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 16),
                             _buildCreditItem(
                               context,
                               name: 'On-Jin ～音人～',
@@ -1012,19 +1014,19 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         Text(
           name,
           style: const TextStyle(
-            color: Color(0xFFC6EFA6),
-            fontSize: 14,
+            color: Colors.white,
+            fontSize: 17,
             fontWeight: FontWeight.w500,
           ),
           overflow: TextOverflow.ellipsis,
           maxLines: 2,
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Text(
           url,
           style: const TextStyle(
             color: Color(0xFF6BCB1F),
-            fontSize: 12,
+            fontSize: 14,
           ),
           overflow: TextOverflow.ellipsis,
           maxLines: 1,
@@ -1034,8 +1036,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   }
 
   void _handleTitleTap() async {
-    // Only trigger when showing "Track Starter" (not running)
-    if (_phaseLabel != 'Track Starter') return;
+    // Only trigger when showing "Starter Pistol" (not running)
+    if (_phaseLabel != 'Starter Pistol') return;
 
     final now = DateTime.now();
 
@@ -1063,53 +1065,15 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     required double max,
     required ValueChanged<double> onChanged,
     required bool enabled,
-    double width = 70,
+    double width = 85,
   }) {
-    final displayValue = value.toStringAsFixed(1);
-    return SizedBox(
+    return _NumberInputField(
+      value: value,
+      min: min,
+      max: max,
+      onChanged: onChanged,
+      enabled: enabled,
       width: width,
-      height: 40,
-      child: TextFormField(
-        key: ValueKey('input_${displayValue}_${min}_$max'),
-        initialValue: displayValue,
-        enabled: enabled,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: Color(0xFFC6EFA6),
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-        ),
-        decoration: InputDecoration(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          filled: true,
-          fillColor: const Color(0xFF1A2332),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFF3A4654)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFF3A4654)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFF6BCB1F), width: 2),
-          ),
-          suffixText: 's',
-          suffixStyle: const TextStyle(
-            color: Color(0xFF9FBFA8),
-            fontSize: 12,
-          ),
-        ),
-        onFieldSubmitted: (text) {
-          final parsed = double.tryParse(text);
-          if (parsed != null) {
-            final rounded = (parsed * 10).round() / 10;
-            onChanged(rounded.clamp(min, max));
-          }
-        },
-      ),
     );
   }
 
@@ -1137,7 +1101,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     );
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: const Color(0xFF141B26),
         borderRadius: BorderRadius.circular(18),
@@ -1152,12 +1116,13 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Title row with play button on right
           Row(
             children: [
               PopupMenuButton<String>(
                 enabled: !_isRunning,
                 padding: EdgeInsets.zero,
-                offset: const Offset(0, 40),
+                offset: const Offset(0, 48),
                 elevation: 8,
                 color: const Color(0xFF1A2332),
                 shadowColor: Colors.black,
@@ -1169,12 +1134,14 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                   final isSelected = option.path == selectedAudioPath;
                   return PopupMenuItem<String>(
                     value: option.path,
+                    height: 52,
                     child: Text(
                       option.name,
                       style: TextStyle(
+                        fontSize: 16,
                         color: isSelected
                             ? const Color(0xFF6BCB1F)
-                            : const Color(0xFFC6EFA6),
+                            : Colors.white,
                         fontWeight:
                             isSelected ? FontWeight.w600 : FontWeight.normal,
                       ),
@@ -1186,29 +1153,133 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                   children: [
                     Text(
                       title,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w600,
-                            color: const Color(0xFFE6FFD4),
+                            color: Colors.white,
                           ),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 6),
                     const Icon(
                       Icons.keyboard_arrow_down,
-                      color: Color(0xFF9FBFA8),
-                      size: 20,
+                      color: Colors.white70,
+                      size: 26,
                     ),
                   ],
                 ),
               ),
               const Spacer(),
+              GestureDetector(
+                onTap: onPreviewAudio,
+                child: const Icon(
+                  Icons.volume_up,
+                  color: Color(0xFF6BCB1F),
+                  size: 28,
+                ),
+              ),
+            ],
+          ),
+          // Selected audio name
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              selectedAudio.name,
+              style: const TextStyle(
+                color: Color(0xFF6BCB1F),
+                fontSize: 14,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Number input row
+          if (randomEnabled)
+            Row(
+              children: [
+                _buildNumberInput(
+                  value: rangeValues.start,
+                  min: sliderMin,
+                  max: rangeValues.end,
+                  enabled: !_isRunning,
+                  onChanged: (value) {
+                    if (value <= rangeValues.end) {
+                      onRangeChanged(RangeValues(value, rangeValues.end));
+                    }
+                  },
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  '〜',
+                  style: TextStyle(color: Colors.white70, fontSize: 16),
+                ),
+                const SizedBox(width: 8),
+                _buildNumberInput(
+                  value: rangeValues.end,
+                  min: rangeValues.start,
+                  max: sliderMax,
+                  enabled: !_isRunning,
+                  onChanged: (value) {
+                    if (value >= rangeValues.start) {
+                      onRangeChanged(RangeValues(rangeValues.start, value));
+                    }
+                  },
+                ),
+              ],
+            )
+          else
+            _buildNumberInput(
+              value: fixedValue,
+              min: sliderMin,
+              max: sliderMax,
+              enabled: !_isRunning,
+              onChanged: onFixedChanged,
+            ),
+          const SizedBox(height: 8),
+          // Slider
+          if (randomEnabled)
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackShape: const RoundedRectSliderTrackShape(),
+                rangeTrackShape: const RoundedRectRangeSliderTrackShape(),
+              ),
+              child: RangeSlider(
+                values: rangeValues,
+                min: sliderMin,
+                max: sliderMax,
+                onChanged: _isRunning ? null : (values) {
+                  // Round to 0.1
+                  final roundedStart = (values.start * 10).round() / 10;
+                  final roundedEnd = (values.end * 10).round() / 10;
+                  onRangeChanged(RangeValues(roundedStart, roundedEnd));
+                },
+              ),
+            )
+          else
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackShape: const RoundedRectSliderTrackShape(),
+              ),
+              child: Slider(
+                value: fixedValue,
+                min: sliderMin,
+                max: sliderMax,
+                onChanged: _isRunning ? null : (value) {
+                  // Round to 0.1
+                  final rounded = (value * 10).round() / 10;
+                  onFixedChanged(rounded);
+                },
+              ),
+            ),
+          // Random switch row (below slider, right-aligned)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
               Text(
                 'ランダム',
-                style: const TextStyle(color: Color(0xFF9FBFA8), fontSize: 12),
+                style: const TextStyle(color: Colors.white70, fontSize: 15),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
               SizedBox(
-                height: 24,
-                width: 40,
+                height: 32,
+                width: 52,
                 child: FittedBox(
                   fit: BoxFit.contain,
                   child: Switch(
@@ -1219,116 +1290,6 @@ class _StartCallHomePageState extends State<StartCallHomePage>
               ),
             ],
           ),
-          // Selected audio display with preview button
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: onPreviewAudio,
-                  child: const Icon(
-                    Icons.play_circle_outline,
-                    color: Color(0xFF6BCB1F),
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  selectedAudio.name,
-                  style: const TextStyle(
-                    color: Color(0xFF6BCB1F),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (randomEnabled)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _buildNumberInput(
-                      value: rangeValues.start,
-                      min: sliderMin,
-                      max: rangeValues.end,
-                      enabled: !_isRunning,
-                      onChanged: (value) {
-                        if (value <= rangeValues.end) {
-                          onRangeChanged(RangeValues(value, rangeValues.end));
-                        }
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      '〜',
-                      style: TextStyle(color: Color(0xFF9FBFA8), fontSize: 16),
-                    ),
-                    const SizedBox(width: 8),
-                    _buildNumberInput(
-                      value: rangeValues.end,
-                      min: rangeValues.start,
-                      max: sliderMax,
-                      enabled: !_isRunning,
-                      onChanged: (value) {
-                        if (value >= rangeValues.start) {
-                          onRangeChanged(RangeValues(rangeValues.start, value));
-                        }
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackShape: const RoundedRectSliderTrackShape(),
-                    rangeTrackShape: const RoundedRectRangeSliderTrackShape(),
-                  ),
-                  child: RangeSlider(
-                    values: rangeValues,
-                    min: sliderMin,
-                    max: sliderMax,
-                    onChanged: _isRunning ? null : (values) {
-                      // Round to 0.1
-                      final roundedStart = (values.start * 10).round() / 10;
-                      final roundedEnd = (values.end * 10).round() / 10;
-                      onRangeChanged(RangeValues(roundedStart, roundedEnd));
-                    },
-                  ),
-                ),
-              ],
-            )
-          else
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildNumberInput(
-                  value: fixedValue,
-                  min: sliderMin,
-                  max: sliderMax,
-                  enabled: !_isRunning,
-                  onChanged: onFixedChanged,
-                ),
-                const SizedBox(height: 8),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackShape: const RoundedRectSliderTrackShape(),
-                  ),
-                  child: Slider(
-                    value: fixedValue,
-                    min: sliderMin,
-                    max: sliderMax,
-                    onChanged: _isRunning ? null : (value) {
-                      // Round to 0.1
-                      final rounded = (value * 10).round() / 10;
-                      onFixedChanged(rounded);
-                    },
-                  ),
-                ),
-              ],
-            ),
         ],
       ),
     );
@@ -1437,7 +1398,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         ? _remainingSeconds.toStringAsFixed(2)
         : '0.00';
     final showCountdown =
-        _phaseLabel.isNotEmpty && _phaseLabel != 'Track Starter';
+        _phaseLabel.isNotEmpty && _phaseLabel != 'Starter Pistol';
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1467,7 +1428,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                 icon: const Icon(Icons.tune_rounded, size: 28),
                 style: IconButton.styleFrom(
                   backgroundColor: const Color(0xFF1A1A1A),
-                  foregroundColor: const Color(0xFFE6FFD4),
+                  foregroundColor: Colors.white,
                   padding: const EdgeInsets.all(12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
@@ -1502,7 +1463,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                 icon: const Icon(Icons.tune_rounded, size: 22),
                 style: IconButton.styleFrom(
                   backgroundColor: const Color(0xFF1A1A1A),
-                  foregroundColor: const Color(0xFFE6FFD4),
+                  foregroundColor: Colors.white,
                   padding: const EdgeInsets.all(8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -1618,7 +1579,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                             fontSize: labelFontSize,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 2,
-                            color: const Color(0xFFE6FFD4),
+                            color: Colors.white,
                           ),
                           glowColor: progressColor.withOpacity(0.3),
                         ),
@@ -1677,39 +1638,45 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         final bottomPadding = isLandscape ? 0.0 : (isSmallScreen ? 20.0 : 32.0);
         final buttonSpacing = isLandscape ? 12.0 : (isSmallScreen ? 12.0 : 16.0);
 
+        // Left button: START/PAUSE toggle
+        // - Running (not paused): show PAUSE
+        // - Otherwise: show START
+        final isShowingPause = _isRunning && !_isPaused;
+
         final buttons = [
           Expanded(
-            child: _buildGlowButton(
-              onPressed: _isRunning && !_isPaused ? null : _startSequence,
-              label: 'START',
-              primaryColor: PhaseColors.ready,
-              secondaryColor: PhaseColors.readySecondary,
-              filled: true,
-              isSmallScreen: isSmallScreen || isLandscape,
-            ),
+            child: isShowingPause
+                ? _buildGlowButton(
+                    onPressed: _pauseSequence,
+                    label: 'PAUSE',
+                    primaryColor: const Color(0xFFE53935),
+                    secondaryColor: const Color(0xFFB71C1C),
+                    filled: true,
+                    isSmallScreen: isSmallScreen || isLandscape,
+                  )
+                : _buildGlowButton(
+                    onPressed: _startSequence,
+                    label: 'START',
+                    primaryColor: const Color(0xFF66DE5A),
+                    secondaryColor: const Color(0xFF4CAF50),
+                    filled: true,
+                    isSmallScreen: isSmallScreen || isLandscape,
+                  ),
           ),
           SizedBox(
             width: isLandscape ? 0 : buttonSpacing,
             height: isLandscape ? buttonSpacing : 0,
           ),
+          // Right button: RESET (enabled when paused or finished)
           Expanded(
-            child: _isPaused || _isFinished
-                ? _buildGlowButton(
-                    onPressed: _resetSequence,
-                    label: 'RESET',
-                    primaryColor: const Color(0xFFE85C5C),
-                    secondaryColor: const Color(0xFFFF6B6B),
-                    filled: false,
-                    isSmallScreen: isSmallScreen || isLandscape,
-                  )
-                : _buildGlowButton(
-                    onPressed: _isRunning ? _pauseSequence : null,
-                    label: 'PAUSE',
-                    primaryColor: PhaseColors.ready,
-                    secondaryColor: PhaseColors.readySecondary,
-                    filled: false,
-                    isSmallScreen: isSmallScreen || isLandscape,
-                  ),
+            child: _buildGlowButton(
+              onPressed: (_isPaused || _isFinished) ? _resetSequence : null,
+              label: 'RESET',
+              primaryColor: const Color(0xFFE85C5C),
+              secondaryColor: const Color(0xFFFF6B6B),
+              filled: false,
+              isSmallScreen: isSmallScreen || isLandscape,
+            ),
           ),
         ];
 
@@ -1868,5 +1835,114 @@ class RoundedRectProgressPainter extends CustomPainter {
         oldDelegate.progressColor != progressColor ||
         oldDelegate.backgroundColor != backgroundColor ||
         oldDelegate.previousPhaseColor != previousPhaseColor;
+  }
+}
+
+class _NumberInputField extends StatefulWidget {
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+  final bool enabled;
+  final double width;
+
+  const _NumberInputField({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+    required this.enabled,
+    this.width = 85,
+  });
+
+  @override
+  State<_NumberInputField> createState() => _NumberInputFieldState();
+}
+
+class _NumberInputFieldState extends State<_NumberInputField> {
+  late TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value.toStringAsFixed(1));
+  }
+
+  @override
+  void didUpdateWidget(_NumberInputField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Update text when value changes from parent (e.g., slider)
+    if (oldWidget.value != widget.value) {
+      _controller.text = widget.value.toStringAsFixed(1);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleSubmit(String text) {
+    final trimmed = text.trim();
+    double newValue;
+    if (trimmed.isEmpty) {
+      // Empty input: use current value
+      newValue = widget.value;
+    } else {
+      final parsed = double.tryParse(trimmed);
+      if (parsed != null) {
+        final rounded = (parsed * 10).round() / 10;
+        newValue = rounded.clamp(widget.min, widget.max);
+      } else {
+        // Invalid input: use current value
+        newValue = widget.value;
+      }
+    }
+    // Always update the text field to show properly formatted value
+    _controller.text = newValue.toStringAsFixed(1);
+    widget.onChanged(newValue);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: widget.width,
+      height: 50,
+      child: TextField(
+        controller: _controller,
+        enabled: widget.enabled,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+        ),
+        decoration: InputDecoration(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          filled: true,
+          fillColor: const Color(0xFF1A2332),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF3A4654)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF3A4654)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF6BCB1F), width: 2),
+          ),
+          suffixText: 's',
+          suffixStyle: const TextStyle(
+            color: Colors.white70,
+            fontSize: 15,
+          ),
+        ),
+        onSubmitted: _handleSubmit,
+      ),
+    );
   }
 }
