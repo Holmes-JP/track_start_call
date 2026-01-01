@@ -298,6 +298,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   DateTime? _measurementStartTime;
   double? _measuredTime; // Measured time in seconds
   bool _showMeasurementResult = false;
+  String _logSortOrder = 'date_desc'; // Default sort order for logs
 
   // Hidden command tap tracking
   int _titleTapCount = 0;
@@ -398,6 +399,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     final timeMeasurementEnabled = prefs.getBool('time_measurement_enabled') ?? _timeMeasurementEnabled;
     final impactThreshold = prefs.getDouble('impact_threshold') ?? _impactThreshold;
     final ignoreDuration = prefs.getDouble('ignore_duration') ?? _ignoreDuration;
+    final logSortOrder = prefs.getString('log_sort_order') ?? _logSortOrder;
 
     if (!mounted) {
       return;
@@ -437,6 +439,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       _timeMeasurementEnabled = timeMeasurementEnabled;
       _impactThreshold = impactThreshold.clamp(5.0, 50.0);
       _ignoreDuration = ignoreDuration.clamp(0.0, 10.0);
+      _logSortOrder = logSortOrder;
     });
   }
 
@@ -859,7 +862,6 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   }
 
   Future<void> _showTimeLogsDialog() async {
-    final isDark = themeNotifier.value;
     final logs = await _loadTimeLogs();
 
     if (!mounted) return;
@@ -876,6 +878,36 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       builder: (context) {
         return StatefulBuilder(
           builder: (context, modalSetState) {
+            final isDark = themeNotifier.value;
+            final sortLabels = <String, String>{
+              'time_asc': '秒数（昇順）',
+              'time_desc': '秒数（降順）',
+              'date_asc': '日付順（昇順）',
+              'date_desc': '日付順（降順）',
+            };
+            final sortedIndices = List<int>.generate(logs.length, (i) => i);
+            sortedIndices.sort((a, b) {
+              final timeA = (logs[a]['time'] as num).toDouble();
+              final timeB = (logs[b]['time'] as num).toDouble();
+              final dateA = DateTime.parse(logs[a]['date'] as String);
+              final dateB = DateTime.parse(logs[b]['date'] as String);
+              switch (_logSortOrder) {
+                case 'time_asc':
+                  final cmp = timeA.compareTo(timeB);
+                  return cmp != 0 ? cmp : dateA.compareTo(dateB);
+                case 'time_desc':
+                  final cmp = timeB.compareTo(timeA);
+                  return cmp != 0 ? cmp : dateB.compareTo(dateA);
+                case 'date_asc':
+                  final cmp = dateA.compareTo(dateB);
+                  return cmp != 0 ? cmp : timeA.compareTo(timeB);
+                case 'date_desc':
+                default:
+                  final cmp = dateB.compareTo(dateA);
+                  return cmp != 0 ? cmp : timeB.compareTo(timeA);
+              }
+            });
+
             Future<void> deleteSelectedLogs() async {
               if (selectedIndices.isEmpty) return;
 
@@ -931,83 +963,130 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                   ),
                   // Header
                   Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                    child: Column(
                       children: [
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            if (isSelectionMode) ...[
-                              IconButton(
-                                onPressed: () {
-                                  modalSetState(() {
-                                    isSelectionMode = false;
-                                    selectedIndices.clear();
-                                  });
-                                },
-                                icon: const Icon(Icons.close),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                              const SizedBox(width: 12),
-                            ],
-                            Text(
-                              isSelectionMode ? '${selectedIndices.length}件選択中' : '計測ログ',
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    color: isDark ? Colors.white : Colors.black87,
+                            Row(
+                              children: [
+                                if (isSelectionMode) ...[
+                                  IconButton(
+                                    onPressed: () {
+                                      modalSetState(() {
+                                        isSelectionMode = false;
+                                        selectedIndices.clear();
+                                      });
+                                    },
+                                    icon: const Icon(Icons.close),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
                                   ),
+                                  const SizedBox(width: 12),
+                                ],
+                                Text(
+                                  isSelectionMode ? '${selectedIndices.length}件選択中' : '計測ログ',
+                                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: isDark ? Colors.white : Colors.black87,
+                                      ),
+                                ),
+                              ],
                             ),
+                            if (logs.isNotEmpty)
+                              Row(
+                                children: [
+                                  if (isSelectionMode && selectedIndices.isNotEmpty)
+                                    TextButton(
+                                      onPressed: deleteSelectedLogs,
+                                      style: TextButton.styleFrom(
+                                        textStyle: const TextStyle(fontSize: 15),
+                                      ),
+                                      child: const Text(
+                                        '選択項目を削除',
+                                        style: TextStyle(color: Colors.red, fontSize: 15),
+                                      ),
+                                    ),
+                                  if (!isSelectionMode)
+                                    TextButton(
+                                      onPressed: () async {
+                                        final confirm = await showDialog<bool>(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            title: const Text('全て削除'),
+                                            content: const Text('全ての計測ログを削除しますか？'),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(context, false),
+                                                child: const Text('キャンセル'),
+                                              ),
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(context, true),
+                                                child: const Text('削除', style: TextStyle(color: Colors.red)),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                        if (confirm == true) {
+                                          await _clearAllTimeLogs();
+                                          modalSetState(() {
+                                            logs.clear();
+                                          });
+                                        }
+                                      },
+                                      style: TextButton.styleFrom(
+                                        textStyle: const TextStyle(fontSize: 15),
+                                      ),
+                                      child: const Text('全て削除', style: TextStyle(color: Colors.red)),
+                                    ),
+                                ],
+                              ),
                           ],
                         ),
-                        if (logs.isNotEmpty)
+                        if (logs.isNotEmpty) ...[
+                          const SizedBox(height: 8),
                           Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              if (isSelectionMode && selectedIndices.isNotEmpty)
-                                TextButton(
-                                  onPressed: deleteSelectedLogs,
-                                  style: TextButton.styleFrom(
-                                    textStyle: const TextStyle(fontSize: 15),
-                                  ),
-                                  child: const Text(
-                                    '選択項目を削除',
-                                    style: TextStyle(color: Colors.red, fontSize: 15),
-                                  ),
-                                ),
-                              if (!isSelectionMode)
-                                TextButton(
-                                  onPressed: () async {
-                                    final confirm = await showDialog<bool>(
-                                      context: context,
-                                      builder: (context) => AlertDialog(
-                                        title: const Text('全て削除'),
-                                        content: const Text('全ての計測ログを削除しますか？'),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () => Navigator.pop(context, false),
-                                            child: const Text('キャンセル'),
-                                          ),
-                                          TextButton(
-                                            onPressed: () => Navigator.pop(context, true),
-                                            child: const Text('削除', style: TextStyle(color: Colors.red)),
-                                          ),
-                                        ],
+                              PopupMenuButton<String>(
+                                onSelected: (value) async {
+                                  final prefs = await SharedPreferences.getInstance();
+                                  await prefs.setString('log_sort_order', value);
+                                  setState(() {
+                                    _logSortOrder = value;
+                                  });
+                                  modalSetState(() {});
+                                },
+                                itemBuilder: (context) => sortLabels.entries
+                                    .map((entry) => PopupMenuItem<String>(
+                                          value: entry.key,
+                                          child: Text(entry.value),
+                                        ))
+                                    .toList(),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      sortLabels[_logSortOrder]!,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: isDark ? Colors.white70 : Colors.black54,
                                       ),
-                                    );
-                                    if (confirm == true) {
-                                      await _clearAllTimeLogs();
-                                      modalSetState(() {
-                                        logs.clear();
-                                      });
-                                    }
-                                  },
-                                  style: TextButton.styleFrom(
-                                    textStyle: const TextStyle(fontSize: 15),
-                                  ),
-                                  child: const Text('全て削除', style: TextStyle(color: Colors.red)),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.expand_more,
+                                      size: 18,
+                                      color: isDark ? Colors.white70 : Colors.black54,
+                                    ),
+                                  ],
                                 ),
+                              ),
                             ],
                           ),
+                        ],
                       ],
                     ),
                   ),
@@ -1018,7 +1097,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                             child: Text(
                               '計測ログがありません',
                               style: TextStyle(
-                                color: Colors.white70,
+                                color: isDark ? Colors.white70 : Colors.black54,
                               ),
                             ),
                           )
@@ -1026,37 +1105,37 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                             padding: const EdgeInsets.symmetric(horizontal: 20),
                             itemCount: logs.length,
                             itemBuilder: (context, index) {
-                              // Show newest first
-                              final reversedIndex = logs.length - 1 - index;
-                              final log = logs[reversedIndex];
+                              // Sorted by selected order
+                              final sortedIndex = sortedIndices[index];
+                              final log = logs[sortedIndex];
                               final time = (log['time'] as num).toDouble();
                               final date = DateTime.parse(log['date'] as String);
-                              final dateStr = '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
-                              final isSelected = selectedIndices.contains(reversedIndex);
+                              final dateStr = "${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}:${date.second.toString().padLeft(2, '0')}";
+                              final isSelected = selectedIndices.contains(sortedIndex);
 
                               return GestureDetector(
                                 onLongPress: () {
                                   modalSetState(() {
                                     isSelectionMode = true;
-                                    selectedIndices.add(reversedIndex);
+                                    selectedIndices.add(sortedIndex);
                                   });
                                 },
-                                onTap: isSelectionMode
-                                    ? () {
-                                        modalSetState(() {
-                                          if (isSelected) {
-                                            selectedIndices.remove(reversedIndex);
-                                            if (selectedIndices.isEmpty) {
-                                              isSelectionMode = false;
-                                            }
-                                          } else {
-                                            selectedIndices.add(reversedIndex);
-                                          }
-                                        });
+                                onTap: () {
+                                  if (isSelectionMode) {
+                                    modalSetState(() {
+                                      if (selectedIndices.contains(sortedIndex)) {
+                                        selectedIndices.remove(sortedIndex);
+                                        if (selectedIndices.isEmpty) {
+                                          isSelectionMode = false;
+                                        }
+                                      } else {
+                                        selectedIndices.add(sortedIndex);
                                       }
-                                    : null,
+                                    });
+                                  }
+                                },
                                 child: Container(
-                                  margin: const EdgeInsets.only(bottom: 8),
+                                  margin: const EdgeInsets.only(bottom: 12),
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
                                     color: isSelected
@@ -1069,41 +1148,22 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                   ),
                                   child: Row(
                                     children: [
-                                      if (isSelectionMode) ...[
-                                        Checkbox(
-                                          value: isSelected,
-                                          onChanged: (value) {
-                                            modalSetState(() {
-                                              if (value == true) {
-                                                selectedIndices.add(reversedIndex);
-                                              } else {
-                                                selectedIndices.remove(reversedIndex);
-                                                if (selectedIndices.isEmpty) {
-                                                  isSelectionMode = false;
-                                                }
-                                              }
-                                            });
-                                          },
-                                          activeColor: Colors.red,
-                                        ),
-                                        const SizedBox(width: 8),
-                                      ],
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              '${time.toStringAsFixed(2)}秒',
-                                              style: GoogleFonts.robotoMono(
-                                                fontSize: 24,
-                                                fontWeight: FontWeight.w700,
-                                                color: PhaseColors.finish,
+                                              '#${index + 1}',
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                color: Colors.white54,
+                                                fontWeight: FontWeight.w500,
                                               ),
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
                                               dateStr,
-                                              style: TextStyle(
+                                              style: const TextStyle(
                                                 fontSize: 14,
                                                 color: Colors.white70,
                                               ),
@@ -1112,13 +1172,33 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                         ),
                                       ),
                                       Text(
-                                        '#${logs.length - index}',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.white54,
+                                        '${time.toStringAsFixed(2)}s',
+                                        style: const TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFFFFD700),
                                         ),
                                       ),
+                                      if (isSelectionMode)
+                                        Padding(
+                                          padding: const EdgeInsets.only(left: 12),
+                                          child: Checkbox(
+                                            value: isSelected,
+                                            activeColor: Colors.red,
+                                            onChanged: (value) {
+                                              modalSetState(() {
+                                                if (value == true) {
+                                                  selectedIndices.add(sortedIndex);
+                                                } else {
+                                                  selectedIndices.remove(sortedIndex);
+                                                  if (selectedIndices.isEmpty) {
+                                                    isSelectionMode = false;
+                                                  }
+                                                }
+                                              });
+                                            },
+                                          ),
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -1134,6 +1214,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       },
     );
   }
+
+
+
 
   Future<void> _openSettings() async {
     if (_isRunning || _isPaused || _isFinished || _isMeasuring || _showMeasurementResult) {
@@ -2498,8 +2581,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         final progress = _animatedProgress;
 
         // Interpolate colors based on progress (light -> dark as countdown approaches 0)
-        // For 'Go' phase or when finished, always use full intensity (progress = 1.0)
-        final effectiveProgress = (_phaseLabel == 'Go' || _isFinished) ? 1.0 : progress;
+        // For 'Go', 'Measuring', 'FINISH' phases, always use full intensity (progress = 1.0)
+        final effectiveProgress = (_phaseLabel == 'Go' || _phaseLabel == 'Measuring' || _phaseLabel == 'FINISH') ? 1.0 : progress;
         final progressColor = PhaseColors.getInterpolatedColor(_phaseLabel, effectiveProgress);
         final secondaryColor = PhaseColors.getInterpolatedSecondaryColor(_phaseLabel, effectiveProgress);
 
