@@ -1,4 +1,4 @@
-package com.example.track_start_call
+package jp.holmes.track_start_call
 
 import android.app.ActivityManager
 import android.graphics.BitmapFactory

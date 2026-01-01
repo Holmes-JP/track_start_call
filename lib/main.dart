@@ -683,8 +683,23 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   }
 
   Future<void> _openSettings() async {
-    if (_isRunning || _isPaused) {
-      await _resetSequence();
+    if (_isRunning || _isPaused || _isFinished) {
+      // Disable wakelock when opening settings
+      WakelockPlus.disable();
+      _runToken++;
+      await _player.stop();
+      if (!mounted) return;
+
+      // Reset all state including progress colors
+      _isRunning = false;
+      _isPaused = false;
+      _isFinished = false;
+      _phaseLabel = 'Starter Pistol';
+      _remainingSeconds = 0;
+      _phaseStartSeconds = 0;
+      _animatedProgress = 0.0;
+      _completedPhaseColors = [];
+      _previousPhaseColor = null;
     }
     setState(() {
       _isSettingsOpen = true;
@@ -1692,45 +1707,57 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         final progressColor = PhaseColors.getInterpolatedColor(_phaseLabel, effectiveProgress);
         final secondaryColor = PhaseColors.getInterpolatedSecondaryColor(_phaseLabel, effectiveProgress);
 
+        // Fixed height for phase label to prevent size changes between phases
+        final labelHeight = isLandscape
+            ? (isTinyScreen ? 40.0 : 52.0)
+            : (isTinyScreen ? 36.0 : (isSmallScreen ? 40.0 : 48.0));
+
+        // Only show progress painter when countdown is active
+        final progressPainter = showCountdown
+            ? RoundedRectProgressPainter(
+                progress: progress,
+                borderRadius: borderRadius,
+                strokeWidth: isSmallScreen ? 3 : 4,
+                progressColor: progressColor,
+                secondaryColor: secondaryColor,
+                backgroundColor: isDark ? const Color(0xFF1A2332) : const Color(0xFFE0E0E0),
+                previousPhaseColor: _previousPhaseColor,
+              )
+            : null;
+
         return RepaintBoundary(
-          child: IntrinsicWidth(
-            child: IntrinsicHeight(
-              child: CustomPaint(
-                painter: RoundedRectProgressPainter(
-                  progress: progress,
-                  borderRadius: borderRadius,
-                  strokeWidth: isSmallScreen ? 3 : 4,
-                  progressColor: progressColor,
-                  secondaryColor: secondaryColor,
-                  backgroundColor: isDark ? const Color(0xFF1A2332) : const Color(0xFFE0E0E0),
-                  previousPhaseColor: _previousPhaseColor,
-                ),
-                child: Container(
-                constraints: BoxConstraints(
-                  minWidth: panelWidth,
-                  maxWidth: panelWidth,
-                ),
-                padding: EdgeInsets.symmetric(
-                  horizontal: horizontalPadding,
-                  vertical: verticalPadding,
-                ),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(borderRadius),
-                  color: isDark ? const Color(0xFF141B26) : Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: progressColor.withOpacity(0.12),
-                      blurRadius: 12,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Phase label with glow - auto-fit to prevent overflow
-                    GestureDetector(
+          child: CustomPaint(
+            painter: progressPainter,
+            child: Container(
+              constraints: BoxConstraints(
+                minWidth: panelWidth,
+                maxWidth: panelWidth,
+              ),
+              padding: EdgeInsets.symmetric(
+                horizontal: horizontalPadding,
+                vertical: verticalPadding,
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(borderRadius),
+                color: isDark ? const Color(0xFF141B26) : Colors.white,
+                boxShadow: showCountdown
+                    ? [
+                        BoxShadow(
+                          color: progressColor.withOpacity(0.12),
+                          blurRadius: 12,
+                          spreadRadius: 1,
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Phase label with glow - fixed height to prevent size changes
+                  SizedBox(
+                    height: labelHeight,
+                    child: GestureDetector(
                       onTap: _handleTitleTap,
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
@@ -1746,43 +1773,42 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                         ),
                       ),
                     ),
-                    if (showCountdown) ...[
-                      SizedBox(height: isLandscape ? 4 : (isSmallScreen ? 8 : 10)),
-                      // Countdown with gradient and glow - colors interpolate with progress
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: ShaderMask(
-                          shaderCallback: (bounds) => LinearGradient(
-                            colors: [progressColor, secondaryColor],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ).createShader(bounds),
-                          child: _buildGlowingText(
-                            countdownText,
-                            GoogleFonts.robotoMono(
-                              fontSize: countdownFontSize,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                            glowColor: progressColor.withOpacity(0.5),
+                  ),
+                  if (showCountdown) ...[
+                    SizedBox(height: isLandscape ? 4 : (isSmallScreen ? 8 : 10)),
+                    // Countdown with gradient and glow - colors interpolate with progress
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: ShaderMask(
+                        shaderCallback: (bounds) => LinearGradient(
+                          colors: [progressColor, secondaryColor],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ).createShader(bounds),
+                        child: _buildGlowingText(
+                          countdownText,
+                          GoogleFonts.robotoMono(
+                            fontSize: countdownFontSize,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
                           ),
+                          glowColor: progressColor.withOpacity(0.5),
                         ),
                       ),
-                      Text(
-                        'seconds',
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: secondsFontSize,
-                          fontWeight: FontWeight.w500,
-                          color: progressColor.withOpacity(0.7),
-                          letterSpacing: 3,
-                        ),
+                    ),
+                    Text(
+                      'seconds',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: secondsFontSize,
+                        fontWeight: FontWeight.w500,
+                        color: progressColor.withOpacity(0.7),
+                        letterSpacing: 3,
                       ),
-                    ],
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
-          ),
           ),
         );
       },
