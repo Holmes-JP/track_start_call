@@ -1,7 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -104,6 +107,14 @@ class PhaseColors {
   static const go = Color(0xFFFF1744);  // Vivid red-pink
   static const goSecondary = Color(0xFFD50000);  // Deep red
 
+  // Measuring colors (cyan/blue for timing)
+  static const measuring = Color(0xFF00BCD4);
+  static const measuringSecondary = Color(0xFF0097A7);
+
+  // Finish colors (gold for achievement)
+  static const finish = Color(0xFFFFD700);
+  static const finishSecondary = Color(0xFFFFA000);
+
   static Color getStartColor(String phase) {
     switch (phase) {
       case 'Ready':
@@ -114,6 +125,10 @@ class PhaseColors {
         return setStart;
       case 'Go':
         return goStart;
+      case 'Measuring':
+        return measuring;
+      case 'FINISH':
+        return finish;
       default:
         return readyStart;
     }
@@ -129,6 +144,10 @@ class PhaseColors {
         return set;
       case 'Go':
         return go;
+      case 'Measuring':
+        return measuring;
+      case 'FINISH':
+        return finish;
       default:
         return ready;
     }
@@ -144,6 +163,10 @@ class PhaseColors {
         return setSecondary;
       case 'Go':
         return goSecondary;
+      case 'Measuring':
+        return measuringSecondary;
+      case 'FINISH':
+        return finishSecondary;
       default:
         return readySecondary;
     }
@@ -261,6 +284,21 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   // Loop setting
   bool _loopEnabled = false;
 
+  // Time measurement mode
+  bool _timeMeasurementEnabled = false;
+
+  // Sensor settings for time measurement
+  double _impactThreshold = 25.0; // Minimum acceleration (m/s²) to detect a tap
+  double _ignoreDuration = 2.0; // Seconds to ignore vibrations after GO
+
+  // Time measurement state
+  bool _isMeasuring = false;
+  Stopwatch _stopwatch = Stopwatch();
+  StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
+  DateTime? _measurementStartTime;
+  double? _measuredTime; // Measured time in seconds
+  bool _showMeasurementResult = false;
+
   // Hidden command tap tracking
   int _titleTapCount = 0;
   DateTime? _lastTitleTap;
@@ -329,6 +367,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     WidgetsBinding.instance.removeObserver(this);
     // Ensure wakelock is disabled when widget is disposed
     WakelockPlus.disable();
+    _accelerometerSubscription?.cancel();
     _progressController.dispose();
     _player.dispose();
     super.dispose();
@@ -356,6 +395,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     final goAudioPath = prefs.getString('go_audio_path') ?? _goAudioPath;
 
     final loopEnabled = prefs.getBool('loop_enabled') ?? _loopEnabled;
+    final timeMeasurementEnabled = prefs.getBool('time_measurement_enabled') ?? _timeMeasurementEnabled;
+    final impactThreshold = prefs.getDouble('impact_threshold') ?? _impactThreshold;
+    final ignoreDuration = prefs.getDouble('ignore_duration') ?? _ignoreDuration;
 
     if (!mounted) {
       return;
@@ -392,6 +434,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       _setAudioPath = setAudioPath;
       _goAudioPath = goAudioPath;
       _loopEnabled = loopEnabled;
+      _timeMeasurementEnabled = timeMeasurementEnabled;
+      _impactThreshold = impactThreshold.clamp(5.0, 50.0);
+      _ignoreDuration = ignoreDuration.clamp(0.0, 10.0);
     });
   }
 
@@ -628,6 +673,15 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         return;
       }
 
+      // Start time measurement if enabled
+      if (_timeMeasurementEnabled) {
+        _phaseLabel = 'Measuring';
+        _startTimeMeasurement();
+        // Don't finish - wait for impact detection
+        // The sequence will be considered "running" until measurement is complete
+        return;
+      }
+
       // Brief pause before next loop iteration
       if (_loopEnabled) {
         await Future.delayed(const Duration(milliseconds: 500));
@@ -647,6 +701,12 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   }
 
   Future<void> _pauseSequence() async {
+    // If measuring, stop the measurement instead of pausing
+    if (_isMeasuring) {
+      _stopTimeMeasurement();
+      return;
+    }
+
     if (!_isRunning || _isPaused) {
       return;
     }
@@ -679,18 +739,412 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     _animatedProgress = 0.0;
     _completedPhaseColors = [];
     _previousPhaseColor = null;
+    _stopTimeMeasurement();
+    _measuredTime = null;
+    _showMeasurementResult = false;
     if (!_isInBackground) setState(() {});
   }
 
+  void _startTimeMeasurement() {
+    if (!_timeMeasurementEnabled) return;
+
+    _isMeasuring = true;
+    _measuredTime = null;
+    _showMeasurementResult = false;
+    _stopwatch.reset();
+    _stopwatch.start();
+    _measurementStartTime = DateTime.now();
+
+    // Start listening to accelerometer
+    _accelerometerSubscription?.cancel();
+    _accelerometerSubscription = accelerometerEventStream(
+      samplingPeriod: const Duration(milliseconds: 20),
+    ).listen((AccelerometerEvent event) {
+      if (!_isMeasuring) return;
+
+      // Calculate total acceleration magnitude
+      final magnitude = sqrt(
+        event.x * event.x + event.y * event.y + event.z * event.z,
+      );
+
+      // Subtract gravity (approximately 9.8 m/s²)
+      final impactForce = (magnitude - 9.8).abs();
+
+      // Check if we're past the ignore duration
+      final elapsed = DateTime.now().difference(_measurementStartTime!).inMilliseconds / 1000.0;
+      if (elapsed < _ignoreDuration) return;
+
+      // Check if impact exceeds threshold
+      if (impactForce >= _impactThreshold) {
+        _stopTimeMeasurement();
+      }
+    });
+
+    if (mounted && !_isInBackground) setState(() {});
+  }
+
+  void _stopTimeMeasurement() {
+    if (!_isMeasuring && _measuredTime == null) {
+      _accelerometerSubscription?.cancel();
+      return;
+    }
+
+    _stopwatch.stop();
+    _accelerometerSubscription?.cancel();
+
+    if (_isMeasuring) {
+      _measuredTime = _stopwatch.elapsedMilliseconds / 1000.0;
+      _isMeasuring = false;
+      _showMeasurementResult = true;
+      _phaseLabel = 'FINISH';
+      _isRunning = false;
+      _isFinished = true;
+      WakelockPlus.disable();
+    }
+
+    if (mounted && !_isInBackground) setState(() {});
+  }
+
+  Future<void> _saveTimeLog() async {
+    if (_measuredTime == null) return;
+
+    final savedTime = _measuredTime!;
+    final prefs = await SharedPreferences.getInstance();
+    final logsJson = prefs.getString('time_logs') ?? '[]';
+    final logs = List<Map<String, dynamic>>.from(jsonDecode(logsJson));
+
+    logs.add({
+      'time': savedTime,
+      'date': DateTime.now().toIso8601String(),
+    });
+
+    await prefs.setString('time_logs', jsonEncode(logs));
+
+    // Reset display after saving
+    _resetSequence();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'タイム ${savedTime.toStringAsFixed(2)}秒 を保存しました',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadTimeLogs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final logsJson = prefs.getString('time_logs') ?? '[]';
+    return List<Map<String, dynamic>>.from(jsonDecode(logsJson));
+  }
+
+  Future<void> _deleteTimeLog(int index) async {
+    final prefs = await SharedPreferences.getInstance();
+    final logsJson = prefs.getString('time_logs') ?? '[]';
+    final logs = List<Map<String, dynamic>>.from(jsonDecode(logsJson));
+
+    if (index >= 0 && index < logs.length) {
+      logs.removeAt(index);
+      await prefs.setString('time_logs', jsonEncode(logs));
+    }
+  }
+
+  Future<void> _clearAllTimeLogs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('time_logs', '[]');
+  }
+
+  Future<void> _showTimeLogsDialog() async {
+    final isDark = themeNotifier.value;
+    final logs = await _loadTimeLogs();
+
+    if (!mounted) return;
+
+    bool isSelectionMode = false;
+    Set<int> selectedIndices = {};
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, modalSetState) {
+            Future<void> deleteSelectedLogs() async {
+              if (selectedIndices.isEmpty) return;
+
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('選択項目を削除'),
+                  content: Text('${selectedIndices.length}件のログを削除しますか？'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('キャンセル'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('削除', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirm == true) {
+                // Delete in reverse order to maintain correct indices
+                final sortedIndices = selectedIndices.toList()..sort((a, b) => b.compareTo(a));
+                for (final index in sortedIndices) {
+                  await _deleteTimeLog(index);
+                  logs.removeAt(index);
+                }
+                modalSetState(() {
+                  selectedIndices.clear();
+                  isSelectionMode = false;
+                });
+              }
+            }
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.8,
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  // Handle bar
+                  Container(
+                    margin: const EdgeInsets.only(top: 12),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white24 : Colors.black26,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            if (isSelectionMode) ...[
+                              IconButton(
+                                onPressed: () {
+                                  modalSetState(() {
+                                    isSelectionMode = false;
+                                    selectedIndices.clear();
+                                  });
+                                },
+                                icon: const Icon(Icons.close),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            Text(
+                              isSelectionMode ? '${selectedIndices.length}件選択中' : '計測ログ',
+                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark ? Colors.white : Colors.black87,
+                                  ),
+                            ),
+                          ],
+                        ),
+                        if (logs.isNotEmpty)
+                          Row(
+                            children: [
+                              if (isSelectionMode && selectedIndices.isNotEmpty)
+                                TextButton(
+                                  onPressed: deleteSelectedLogs,
+                                  style: TextButton.styleFrom(
+                                    textStyle: const TextStyle(fontSize: 15),
+                                  ),
+                                  child: const Text(
+                                    '選択項目を削除',
+                                    style: TextStyle(color: Colors.red, fontSize: 15),
+                                  ),
+                                ),
+                              if (!isSelectionMode)
+                                TextButton(
+                                  onPressed: () async {
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text('全て削除'),
+                                        content: const Text('全ての計測ログを削除しますか？'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(context, false),
+                                            child: const Text('キャンセル'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(context, true),
+                                            child: const Text('削除', style: TextStyle(color: Colors.red)),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirm == true) {
+                                      await _clearAllTimeLogs();
+                                      modalSetState(() {
+                                        logs.clear();
+                                      });
+                                    }
+                                  },
+                                  style: TextButton.styleFrom(
+                                    textStyle: const TextStyle(fontSize: 15),
+                                  ),
+                                  child: const Text('全て削除', style: TextStyle(color: Colors.red)),
+                                ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                  // Logs list
+                  Expanded(
+                    child: logs.isEmpty
+                        ? Center(
+                            child: Text(
+                              '計測ログがありません',
+                              style: TextStyle(
+                                color: Colors.white70,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            itemCount: logs.length,
+                            itemBuilder: (context, index) {
+                              // Show newest first
+                              final reversedIndex = logs.length - 1 - index;
+                              final log = logs[reversedIndex];
+                              final time = (log['time'] as num).toDouble();
+                              final date = DateTime.parse(log['date'] as String);
+                              final dateStr = '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+                              final isSelected = selectedIndices.contains(reversedIndex);
+
+                              return GestureDetector(
+                                onLongPress: () {
+                                  modalSetState(() {
+                                    isSelectionMode = true;
+                                    selectedIndices.add(reversedIndex);
+                                  });
+                                },
+                                onTap: isSelectionMode
+                                    ? () {
+                                        modalSetState(() {
+                                          if (isSelected) {
+                                            selectedIndices.remove(reversedIndex);
+                                            if (selectedIndices.isEmpty) {
+                                              isSelectionMode = false;
+                                            }
+                                          } else {
+                                            selectedIndices.add(reversedIndex);
+                                          }
+                                        });
+                                      }
+                                    : null,
+                                child: Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? const Color(0xFF3A3A3A)
+                                        : const Color(0xFF1F1F1F),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: isSelected
+                                        ? Border.all(color: Colors.red, width: 2)
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      if (isSelectionMode) ...[
+                                        Checkbox(
+                                          value: isSelected,
+                                          onChanged: (value) {
+                                            modalSetState(() {
+                                              if (value == true) {
+                                                selectedIndices.add(reversedIndex);
+                                              } else {
+                                                selectedIndices.remove(reversedIndex);
+                                                if (selectedIndices.isEmpty) {
+                                                  isSelectionMode = false;
+                                                }
+                                              }
+                                            });
+                                          },
+                                          activeColor: Colors.red,
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              '${time.toStringAsFixed(2)}秒',
+                                              style: GoogleFonts.robotoMono(
+                                                fontSize: 24,
+                                                fontWeight: FontWeight.w700,
+                                                color: PhaseColors.finish,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              dateStr,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: Colors.white70,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Text(
+                                        '#${logs.length - index}',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white54,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _openSettings() async {
-    if (_isRunning || _isPaused || _isFinished) {
+    if (_isRunning || _isPaused || _isFinished || _isMeasuring || _showMeasurementResult) {
       // Disable wakelock when opening settings
       WakelockPlus.disable();
       _runToken++;
       await _player.stop();
+      _stopTimeMeasurement();
       if (!mounted) return;
 
-      // Reset all state including progress colors
+      // Reset all state including progress colors and measurement
       _isRunning = false;
       _isPaused = false;
       _isFinished = false;
@@ -700,6 +1154,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       _animatedProgress = 0.0;
       _completedPhaseColors = [];
       _previousPhaseColor = null;
+      _isMeasuring = false;
+      _measuredTime = null;
+      _showMeasurementResult = false;
     }
     setState(() {
       _isSettingsOpen = true;
@@ -763,6 +1220,57 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                 ),
                           ),
                           const SizedBox(height: 16),
+                          // Time logs button
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () {
+                                _showTimeLogsDialog();
+                              },
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                                decoration: BoxDecoration(
+                                  color: isDark ? const Color(0xFF141B26) : Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                                      spreadRadius: 1,
+                                      blurRadius: 0,
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.history,
+                                          color: PhaseColors.finish,
+                                          size: 28,
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Text(
+                                          '計測ログ',
+                                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                                fontWeight: FontWeight.w600,
+                                                color: isDark ? Colors.white : Colors.black87,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                    Icon(
+                                      Icons.chevron_right,
+                                      color: isDark ? Colors.white54 : Colors.black45,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
                           // Theme setting
                           Container(
                             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
@@ -817,8 +1325,215 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                             ),
                           ),
                           const SizedBox(height: 12),
-                          // Loop setting
+                          // Time measurement setting
                           Container(
+                            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF141B26) : Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                                  spreadRadius: 1,
+                                  blurRadius: 0,
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.timer,
+                                      color: Color(0xFF6BCB1F),
+                                      size: 28,
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Text(
+                                      'タイム計測',
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark ? Colors.white : Colors.black87,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(
+                                  height: 32,
+                                  width: 52,
+                                  child: FittedBox(
+                                    fit: BoxFit.contain,
+                                    child: Switch(
+                                      value: _timeMeasurementEnabled,
+                                      onChanged: (value) {
+                                        sync(() {
+                                          _timeMeasurementEnabled = value;
+                                          _saveBool('time_measurement_enabled', value);
+                                          // Disable loop when time measurement is enabled
+                                          if (value && _loopEnabled) {
+                                            _loopEnabled = false;
+                                            _saveBool('loop_enabled', false);
+                                          }
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Sensor settings (shown when time measurement is enabled)
+                          if (_timeMeasurementEnabled) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF141B26) : Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                                    spreadRadius: 1,
+                                    blurRadius: 0,
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.sensors,
+                                        color: Color(0xFF6BCB1F),
+                                        size: 24,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        'センサー設定',
+                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                              color: isDark ? Colors.white : Colors.black87,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 20),
+                                  // Impact threshold setting
+                                  Text(
+                                    '衝撃検知しきい値',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: isDark ? Colors.white70 : Colors.black54,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'タップを検知する最小の衝撃強度',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white54,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: SliderTheme(
+                                          data: SliderTheme.of(context).copyWith(
+                                            trackShape: const RoundedRectSliderTrackShape(),
+                                          ),
+                                          child: Slider(
+                                            value: _impactThreshold,
+                                            min: 5.0,
+                                            max: 50.0,
+                                            onChanged: (value) {
+                                              sync(() {
+                                                _impactThreshold = (value * 10).round() / 10;
+                                                _saveDouble('impact_threshold', _impactThreshold);
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 60,
+                                        child: Text(
+                                          '${_impactThreshold.toStringAsFixed(1)}',
+                                          textAlign: TextAlign.end,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark ? Colors.white : Colors.black87,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  // Ignore duration setting
+                                  Text(
+                                    '振動無視時間',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: isDark ? Colors.white70 : Colors.black54,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'GO後、走行中の振動を無視する時間（秒）',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white54,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: SliderTheme(
+                                          data: SliderTheme.of(context).copyWith(
+                                            trackShape: const RoundedRectSliderTrackShape(),
+                                          ),
+                                          child: Slider(
+                                            value: _ignoreDuration,
+                                            min: 0.0,
+                                            max: 10.0,
+                                            onChanged: (value) {
+                                              sync(() {
+                                                _ignoreDuration = (value * 10).round() / 10;
+                                                _saveDouble('ignore_duration', _ignoreDuration);
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 60,
+                                        child: Text(
+                                          '${_ignoreDuration.toStringAsFixed(1)}秒',
+                                          textAlign: TextAlign.end,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark ? Colors.white : Colors.black87,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          // Loop setting
+                          Opacity(
+                            opacity: _timeMeasurementEnabled ? 0.5 : 1.0,
+                            child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                             decoration: BoxDecoration(
                               color: isDark ? const Color(0xFF141B26) : Colors.white,
@@ -858,17 +1573,20 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                     fit: BoxFit.contain,
                                     child: Switch(
                                       value: _loopEnabled,
-                                      onChanged: (value) {
-                                        sync(() {
-                                          _loopEnabled = value;
-                                          _saveBool('loop_enabled', value);
-                                        });
-                                      },
+                                      onChanged: _timeMeasurementEnabled
+                                          ? null
+                                          : (value) {
+                                              sync(() {
+                                                _loopEnabled = value;
+                                                _saveBool('loop_enabled', value);
+                                              });
+                                            },
                                     ),
                                   ),
                                 ),
                               ],
                             ),
+                          ),
                           ),
                           const SizedBox(height: 16),
                           _buildPhaseSetting(
@@ -1310,9 +2028,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                       option.name,
                       style: TextStyle(
                         fontSize: 16,
-                        color: isSelected
-                            ? const Color(0xFF6BCB1F)
-                            : (isDark ? Colors.white : Colors.black87),
+                                    color: isSelected
+                                        ? const Color(0xFF3A3A3A)
+                                        : const Color(0xFF1F1F1F),
                         fontWeight:
                             isSelected ? FontWeight.w600 : FontWeight.normal,
                       ),
@@ -1565,12 +2283,31 @@ class _StartCallHomePageState extends State<StartCallHomePage>
 
   @override
   Widget build(BuildContext context) {
-    final countdownText = _remainingSeconds > 0
-        ? _remainingSeconds.toStringAsFixed(2)
-        : '0.00';
+    // Determine display text based on state
+    String displayText;
+    if (_isMeasuring) {
+      // Show elapsed time during measurement
+      final elapsed = _stopwatch.elapsedMilliseconds / 1000.0;
+      displayText = elapsed.toStringAsFixed(2);
+    } else if (_showMeasurementResult && _measuredTime != null) {
+      // Show measured time after finish
+      displayText = _measuredTime!.toStringAsFixed(2);
+    } else if (_remainingSeconds > 0) {
+      displayText = _remainingSeconds.toStringAsFixed(2);
+    } else {
+      displayText = '0.00';
+    }
+
     final showCountdown =
         _phaseLabel.isNotEmpty && _phaseLabel != 'Starter Pistol';
     final isDark = themeNotifier.value;
+
+    // Trigger rebuild during measurement to update elapsed time
+    if (_isMeasuring) {
+      Future.delayed(const Duration(milliseconds: 16), () {
+        if (mounted && _isMeasuring) setState(() {});
+      });
+    }
 
     return Scaffold(
       backgroundColor: isDark ? Colors.black : const Color(0xFFF5F5F5),
@@ -1580,8 +2317,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
             final isLandscape = orientation == Orientation.landscape;
 
             return isLandscape
-                ? _buildLandscapeLayout(countdownText, showCountdown)
-                : _buildPortraitLayout(countdownText, showCountdown);
+                ? _buildLandscapeLayout(displayText, showCountdown)
+                : _buildPortraitLayout(displayText, showCountdown);
           },
         ),
       ),
@@ -1597,11 +2334,12 @@ class _StartCallHomePageState extends State<StartCallHomePage>
           child: Row(
             children: [
               IconButton(
-                onPressed: _openSettings,
+                onPressed: _showMeasurementResult ? null : _openSettings,
                 icon: const Icon(Icons.tune_rounded, size: 28),
                 style: IconButton.styleFrom(
                   backgroundColor: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE0E0E0),
                   foregroundColor: isDark ? Colors.white : Colors.black87,
+                  disabledForegroundColor: isDark ? Colors.white24 : Colors.black26,
                   padding: const EdgeInsets.all(12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
@@ -1609,6 +2347,33 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                 ),
               ),
               const Spacer(),
+              if (_timeMeasurementEnabled)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE0E0E0),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.timer,
+                        size: 16,
+                        color: const Color(0xFF6BCB1F),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'タイム計測モード',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white70 : Colors.black54,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
@@ -1628,22 +2393,53 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          // Left side: Settings button
+          // Left side: Settings button and time measurement indicator
           Column(
             mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               IconButton(
-                onPressed: _openSettings,
+                onPressed: _showMeasurementResult ? null : _openSettings,
                 icon: const Icon(Icons.tune_rounded, size: 22),
                 style: IconButton.styleFrom(
                   backgroundColor: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE0E0E0),
                   foregroundColor: isDark ? Colors.white : Colors.black87,
+                  disabledForegroundColor: isDark ? Colors.white24 : Colors.black26,
                   padding: const EdgeInsets.all(8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
               ),
+              if (_timeMeasurementEnabled) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE0E0E0),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.timer,
+                        size: 14,
+                        color: const Color(0xFF6BCB1F),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'タイム計測モード',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white70 : Colors.black54,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(width: 16),
@@ -1825,52 +2621,114 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         final bottomPadding = isLandscape ? 0.0 : (isSmallScreen ? 40.0 : 56.0);
         final buttonSpacing = isLandscape ? 12.0 : (isSmallScreen ? 12.0 : 16.0);
 
-        // Left button: START/PAUSE toggle
-        // - Running (not paused): show PAUSE
-        // - Otherwise: show START
-        final isShowingPause = _isRunning && !_isPaused;
+        // Button layout depends on state
+        // - Measuring: STOP only
+        // - Measurement result: SAVE (left), RESET (right)
+        // - Running (not paused): PAUSE, RESET
+        // - Otherwise: START, RESET
+        final isShowingStop = _isMeasuring;
+        final isShowingPause = !_isMeasuring && _isRunning && !_isPaused;
+        final isShowingResult = _showMeasurementResult;
 
-        final buttons = [
-          Expanded(
-            child: isShowingPause
-                ? _buildGlowButton(
-                    onPressed: _pauseSequence,
-                    label: 'PAUSE',
-                    primaryColor: const Color(0xFFE53935),
-                    secondaryColor: const Color(0xFFB71C1C),
-                    filled: true,
-                    isSmallScreen: isSmallScreen || isLandscape,
-                  )
-                : _buildGlowButton(
-                    onPressed: _startSequence,
-                    label: 'START',
-                    primaryColor: const Color(0xFF66DE5A),
-                    secondaryColor: const Color(0xFF4CAF50),
-                    filled: true,
-                    isSmallScreen: isSmallScreen || isLandscape,
-                  ),
-          ),
-          SizedBox(
-            width: isLandscape ? 0 : buttonSpacing,
-            height: isLandscape ? buttonSpacing : 0,
-          ),
-          // Right button: RESET (enabled when paused or finished)
-          Expanded(
-            child: _buildGlowButton(
-              onPressed: (_isPaused || _isFinished) ? _resetSequence : null,
-              label: 'RESET',
-              primaryColor: const Color(0xFFE85C5C),
-              secondaryColor: const Color(0xFFFF6B6B),
-              filled: false,
-              isSmallScreen: isSmallScreen || isLandscape,
+        List<Widget> buttons;
+
+        if (isShowingResult) {
+          // Measurement result: SAVE (left), RESET (right)
+          buttons = [
+            Expanded(
+              child: _buildGlowButton(
+                onPressed: _saveTimeLog,
+                label: 'SAVE',
+                primaryColor: PhaseColors.finish,
+                secondaryColor: PhaseColors.finishSecondary,
+                filled: true,
+                isSmallScreen: isSmallScreen || isLandscape,
+              ),
             ),
-          ),
-        ];
+            SizedBox(
+              width: isLandscape ? 0 : buttonSpacing,
+              height: isLandscape ? buttonSpacing : 0,
+            ),
+            Expanded(
+              child: _buildGlowButton(
+                onPressed: _resetSequence,
+                label: 'RESET',
+                primaryColor: const Color(0xFFE85C5C),
+                secondaryColor: const Color(0xFFFF6B6B),
+                filled: false,
+                isSmallScreen: isSmallScreen || isLandscape,
+              ),
+            ),
+          ];
+        } else if (isShowingStop) {
+          // Measuring: STOP only (centered)
+          buttons = [
+            Expanded(
+              child: _buildGlowButton(
+                onPressed: _pauseSequence,
+                label: 'STOP',
+                primaryColor: PhaseColors.measuring,
+                secondaryColor: PhaseColors.measuringSecondary,
+                filled: true,
+                isSmallScreen: isSmallScreen || isLandscape,
+              ),
+            ),
+          ];
+        } else {
+          // Normal state: START/PAUSE, RESET
+          buttons = [
+            Expanded(
+              child: isShowingPause
+                  ? _buildGlowButton(
+                      onPressed: _pauseSequence,
+                      label: 'PAUSE',
+                      primaryColor: const Color(0xFFE53935),
+                      secondaryColor: const Color(0xFFB71C1C),
+                      filled: true,
+                      isSmallScreen: isSmallScreen || isLandscape,
+                    )
+                  : _buildGlowButton(
+                      onPressed: _startSequence,
+                      label: 'START',
+                      primaryColor: const Color(0xFF66DE5A),
+                      secondaryColor: const Color(0xFF4CAF50),
+                      filled: true,
+                      isSmallScreen: isSmallScreen || isLandscape,
+                    ),
+            ),
+            SizedBox(
+              width: isLandscape ? 0 : buttonSpacing,
+              height: isLandscape ? buttonSpacing : 0,
+            ),
+            Expanded(
+              child: _buildGlowButton(
+                onPressed: (_isPaused || _isFinished) ? _resetSequence : null,
+                label: 'RESET',
+                primaryColor: const Color(0xFFE85C5C),
+                secondaryColor: const Color(0xFFFF6B6B),
+                filled: false,
+                isSmallScreen: isSmallScreen || isLandscape,
+              ),
+            ),
+          ];
+        }
 
         if (isLandscape) {
+          // In landscape, replace Expanded with fixed height buttons
+          final landscapeButtons = buttons.map((widget) {
+            if (widget is Expanded) {
+              return SizedBox(
+                width: double.infinity,
+                child: widget.child,
+              );
+            }
+            return widget;
+          }).toList();
+
           return Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: buttons,
+            mainAxisSize: MainAxisSize.min,
+            children: landscapeButtons,
           );
         } else {
           return Padding(
