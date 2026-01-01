@@ -2432,26 +2432,37 @@ class _StartCallHomePageState extends State<StartCallHomePage>
               const Spacer(),
               if (_timeMeasurementEnabled)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE0E0E0),
-                    borderRadius: BorderRadius.circular(10),
+                    color: isDark ? const Color(0xFF0D2A3A) : const Color(0xFFE3F2FD),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF00BCD4),
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF00BCD4).withOpacity(0.3),
+                        blurRadius: 8,
+                        spreadRadius: 1,
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.timer,
-                        size: 16,
-                        color: const Color(0xFF6BCB1F),
+                        size: 20,
+                        color: Color(0xFF00BCD4),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 8),
                       Text(
                         'タイム計測モード',
                         style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white70 : Colors.black54,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? const Color(0xFF00BCD4) : const Color(0xFF0097A7),
                         ),
                       ),
                     ],
@@ -2497,26 +2508,37 @@ class _StartCallHomePageState extends State<StartCallHomePage>
               if (_timeMeasurementEnabled) ...[
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE0E0E0),
-                    borderRadius: BorderRadius.circular(8),
+                    color: isDark ? const Color(0xFF0D2A3A) : const Color(0xFFE3F2FD),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: const Color(0xFF00BCD4),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF00BCD4).withOpacity(0.25),
+                        blurRadius: 6,
+                        spreadRadius: 0,
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.timer,
-                        size: 14,
-                        color: const Color(0xFF6BCB1F),
+                        size: 16,
+                        color: Color(0xFF00BCD4),
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 6),
                       Text(
                         'タイム計測モード',
                         style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white70 : Colors.black54,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? const Color(0xFF00BCD4) : const Color(0xFF0097A7),
                         ),
                       ),
                     ],
