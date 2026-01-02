@@ -50,7 +50,5 @@
 		<string>audio</string>
 		<string>processing</string>
 	</array>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>タイム計測の音トリガーにマイクを使用します</string>
 </dict>
 </plist>
