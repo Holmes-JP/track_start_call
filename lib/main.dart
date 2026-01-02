@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+import 'package:noise_meter/noise_meter.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -288,13 +290,18 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   bool _timeMeasurementEnabled = false;
 
   // Sensor settings for time measurement
+  String _triggerMethod = 'impact'; // 'impact', 'sound', 'impact_and_sound', 'tap'
   double _impactThreshold = 25.0; // Minimum acceleration (m/s²) to detect a tap
   double _ignoreDuration = 2.0; // Seconds to ignore vibrations after GO
+  double _soundThreshold = 80.0; // Minimum decibel level to detect a sound
+  double _soundIgnoreDuration = 2.0; // Seconds to ignore sound after GO
 
   // Time measurement state
   bool _isMeasuring = false;
   Stopwatch _stopwatch = Stopwatch();
   StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
+  StreamSubscription<NoiseReading>? _noiseMeterSubscription;
+  NoiseMeter? _noiseMeter;
   DateTime? _measurementStartTime;
   double? _measuredTime; // Measured time in seconds
   bool _showMeasurementResult = false;
@@ -369,6 +376,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     // Ensure wakelock is disabled when widget is disposed
     WakelockPlus.disable();
     _accelerometerSubscription?.cancel();
+    _noiseMeterSubscription?.cancel();
     _progressController.dispose();
     _player.dispose();
     super.dispose();
@@ -397,8 +405,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
 
     final loopEnabled = prefs.getBool('loop_enabled') ?? _loopEnabled;
     final timeMeasurementEnabled = prefs.getBool('time_measurement_enabled') ?? _timeMeasurementEnabled;
+    final triggerMethod = prefs.getString('trigger_method') ?? _triggerMethod;
     final impactThreshold = prefs.getDouble('impact_threshold') ?? _impactThreshold;
     final ignoreDuration = prefs.getDouble('ignore_duration') ?? _ignoreDuration;
+    final soundThreshold = prefs.getDouble('sound_threshold') ?? _soundThreshold;
+    final soundIgnoreDuration = prefs.getDouble('sound_ignore_duration') ?? _soundIgnoreDuration;
     final logSortOrder = prefs.getString('log_sort_order') ?? _logSortOrder;
 
     if (!mounted) {
@@ -437,8 +448,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       _goAudioPath = goAudioPath;
       _loopEnabled = loopEnabled;
       _timeMeasurementEnabled = timeMeasurementEnabled;
+      _triggerMethod = triggerMethod;
       _impactThreshold = impactThreshold.clamp(5.0, 50.0);
       _ignoreDuration = ignoreDuration.clamp(0.0, 10.0);
+      _soundThreshold = soundThreshold.clamp(50.0, 120.0);
+      _soundIgnoreDuration = soundIgnoreDuration.clamp(0.0, 10.0);
       _logSortOrder = logSortOrder;
     });
   }
@@ -758,30 +772,50 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     _stopwatch.start();
     _measurementStartTime = DateTime.now();
 
-    // Start listening to accelerometer
-    _accelerometerSubscription?.cancel();
-    _accelerometerSubscription = accelerometerEventStream(
-      samplingPeriod: const Duration(milliseconds: 20),
-    ).listen((AccelerometerEvent event) {
-      if (!_isMeasuring) return;
+    // Start accelerometer listening for impact-based triggers
+    // Using Z-axis only: Running causes X/Y noise, but tapping causes Z-axis movement
+    if (_triggerMethod == 'impact' || _triggerMethod == 'impact_and_sound') {
+      _accelerometerSubscription?.cancel();
+      _accelerometerSubscription = accelerometerEventStream(
+        samplingPeriod: const Duration(milliseconds: 20),
+      ).listen((AccelerometerEvent event) {
+        if (!_isMeasuring) return;
 
-      // Calculate total acceleration magnitude
-      final magnitude = sqrt(
-        event.x * event.x + event.y * event.y + event.z * event.z,
-      );
+        // Use Z-axis (forward/backward) only for impact detection
+        // Running causes X/Y movement, but tapping pushes the phone forward/backward
+        final impactForce = event.z.abs();
 
-      // Subtract gravity (approximately 9.8 m/s²)
-      final impactForce = (magnitude - 9.8).abs();
+        // Check if we're past the ignore duration
+        final elapsed = DateTime.now().difference(_measurementStartTime!).inMilliseconds / 1000.0;
+        if (elapsed < _ignoreDuration) return;
 
-      // Check if we're past the ignore duration
-      final elapsed = DateTime.now().difference(_measurementStartTime!).inMilliseconds / 1000.0;
-      if (elapsed < _ignoreDuration) return;
+        // Check if impact exceeds threshold
+        if (impactForce >= _impactThreshold) {
+          _stopTimeMeasurement();
+        }
+      });
+    }
 
-      // Check if impact exceeds threshold
-      if (impactForce >= _impactThreshold) {
-        _stopTimeMeasurement();
-      }
-    });
+    // Start noise meter listening for sound-based triggers
+    if (_triggerMethod == 'sound' || _triggerMethod == 'impact_and_sound') {
+      _noiseMeter ??= NoiseMeter();
+      _noiseMeterSubscription?.cancel();
+      _noiseMeterSubscription = _noiseMeter!.noise.listen((NoiseReading noiseReading) {
+        if (!_isMeasuring) return;
+
+        // Check if we're past the ignore duration
+        final elapsed = DateTime.now().difference(_measurementStartTime!).inMilliseconds / 1000.0;
+        if (elapsed < _soundIgnoreDuration) return;
+
+        // Check if sound level exceeds threshold
+        if (noiseReading.maxDecibel >= _soundThreshold) {
+          _stopTimeMeasurement();
+        }
+      });
+    }
+
+    // For 'tap' trigger, measurement stops when user taps the screen
+    // (handled in the UI via gesture detector)
 
     if (mounted && !_isInBackground) setState(() {});
   }
@@ -789,11 +823,13 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   void _stopTimeMeasurement() {
     if (!_isMeasuring && _measuredTime == null) {
       _accelerometerSubscription?.cancel();
+      _noiseMeterSubscription?.cancel();
       return;
     }
 
     _stopwatch.stop();
     _accelerometerSubscription?.cancel();
+    _noiseMeterSubscription?.cancel();
 
     if (_isMeasuring) {
       _measuredTime = _stopwatch.elapsedMilliseconds / 1000.0;
@@ -859,6 +895,985 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   Future<void> _clearAllTimeLogs() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('time_logs', '[]');
+  }
+
+  Future<void> _showImpactCalibrationDialog(void Function(void Function()) parentSync) async {
+    if (!mounted) return;
+
+    final isDark = themeNotifier.value;
+
+    // Calibration state
+    // 0: ready, 1: countdown, 2: running, 3: waiting for tap, 4: complete
+    int phase = 0;
+    int countdown = 3;
+    double runningMaxZ = 0.0;
+    double currentZ = 0.0;
+    double tapZ = 0.0;
+    int runningCountdown = 5;
+    double calculatedThreshold = 0.0;
+    StreamSubscription<AccelerometerEvent>? calibrationSubscription;
+    Timer? countdownTimer;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            // Start calibration
+            void startCalibration() {
+              dialogSetState(() {
+                phase = 1;
+                countdown = 3;
+              });
+
+              // 3 second countdown before running phase
+              countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+                if (countdown > 1) {
+                  dialogSetState(() {
+                    countdown--;
+                  });
+                } else {
+                  timer.cancel();
+                  // Start running phase
+                  dialogSetState(() {
+                    phase = 2;
+                    runningCountdown = 5;
+                    runningMaxZ = 0.0;
+                  });
+
+                  // Start accelerometer listening
+                  calibrationSubscription = accelerometerEventStream(
+                    samplingPeriod: const Duration(milliseconds: 20),
+                  ).listen((AccelerometerEvent event) {
+                    final zValue = event.z.abs();
+                    if (phase == 2) {
+                      dialogSetState(() {
+                        currentZ = zValue;
+                        if (zValue > runningMaxZ) {
+                          runningMaxZ = zValue;
+                        }
+                      });
+                    } else if (phase == 3) {
+                      dialogSetState(() {
+                        currentZ = zValue;
+                      });
+                      // Detect tap: if Z value is significantly higher than running max
+                      if (zValue > runningMaxZ * 1.5 && zValue > runningMaxZ + 5) {
+                        dialogSetState(() {
+                          tapZ = zValue;
+                          phase = 4;
+                          // Calculate threshold: 60% between running max and tap
+                          calculatedThreshold = runningMaxZ + (tapZ - runningMaxZ) * 0.5;
+                          // Clamp to valid range
+                          calculatedThreshold = calculatedThreshold.clamp(5.0, 50.0);
+                          // Round to 1 decimal place
+                          calculatedThreshold = (calculatedThreshold * 10).round() / 10;
+                        });
+                        calibrationSubscription?.cancel();
+                      }
+                    }
+                  });
+
+                  // Running phase countdown (5 seconds)
+                  countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+                    if (runningCountdown > 1) {
+                      dialogSetState(() {
+                        runningCountdown--;
+                      });
+                    } else {
+                      timer.cancel();
+                      // Move to tap detection phase
+                      dialogSetState(() {
+                        phase = 3;
+                      });
+                    }
+                  });
+                }
+              });
+            }
+
+            // Cleanup function
+            void cleanup() {
+              calibrationSubscription?.cancel();
+              countdownTimer?.cancel();
+            }
+
+            return AlertDialog(
+              backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Row(
+                children: [
+                  const Icon(
+                    Icons.tune,
+                    color: Color(0xFF00BCD4),
+                    size: 24,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    '衝撃キャリブレーション',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Phase 0: Ready
+                    if (phase == 0) ...[
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF0D2A3A) : const Color(0xFFE3F2FD),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          children: [
+                            const Icon(
+                              Icons.directions_run,
+                              size: 48,
+                              color: Color(0xFF00BCD4),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              '手順',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '1. スマホを腰に固定してください\n'
+                              '2. 開始ボタンを押すと3秒後に計測開始\n'
+                              '3. 5秒間激しく足踏みしてください\n'
+                              '4. 合図が出たらスマホを叩いてください',
+                              style: TextStyle(
+                                fontSize: 14,
+                                height: 1.6,
+                                color: isDark ? Colors.white70 : Colors.black54,
+                              ),
+                              textAlign: TextAlign.left,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    // Phase 1: Countdown before running
+                    if (phase == 1) ...[
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF9800).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFFFF9800),
+                            width: 2,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            const Icon(
+                              Icons.timer,
+                              size: 48,
+                              color: Color(0xFFFF9800),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '準備してください',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              '$countdown',
+                              style: const TextStyle(
+                                fontSize: 72,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFFFF9800),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    // Phase 2: Running measurement
+                    if (phase == 2) ...[
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4CAF50).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFF4CAF50),
+                            width: 2,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            const Icon(
+                              Icons.directions_run,
+                              size: 48,
+                              color: Color(0xFF4CAF50),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '激しく足踏み！',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              '$runningCountdown',
+                              style: const TextStyle(
+                                fontSize: 56,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF4CAF50),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '現在Z軸: ${currentZ.toStringAsFixed(1)}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: isDark ? Colors.white70 : Colors.black54,
+                              ),
+                            ),
+                            Text(
+                              '最大Z軸: ${runningMaxZ.toStringAsFixed(1)}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    // Phase 3: Waiting for tap
+                    if (phase == 3) ...[
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE91E63).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFFE91E63),
+                            width: 2,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            const Icon(
+                              Icons.touch_app,
+                              size: 48,
+                              color: Color(0xFFE91E63),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'スマホを叩いてください！',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              '現在Z軸: ${currentZ.toStringAsFixed(1)}',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: isDark ? Colors.white70 : Colors.black54,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '足踏み時最大: ${runningMaxZ.toStringAsFixed(1)}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark ? Colors.white54 : Colors.black45,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    // Phase 4: Complete
+                    if (phase == 4) ...[
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00BCD4).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFF00BCD4),
+                            width: 2,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            const Icon(
+                              Icons.check_circle,
+                              size: 48,
+                              color: Color(0xFF00BCD4),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'キャリブレーション完了！',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                Column(
+                                  children: [
+                                    Text(
+                                      '足踏み時',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark ? Colors.white54 : Colors.black45,
+                                      ),
+                                    ),
+                                    Text(
+                                      runningMaxZ.toStringAsFixed(1),
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark ? Colors.white70 : Colors.black54,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Icon(
+                                  Icons.arrow_forward,
+                                  color: isDark ? Colors.white38 : Colors.black26,
+                                ),
+                                Column(
+                                  children: [
+                                    Text(
+                                      'タップ時',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark ? Colors.white54 : Colors.black45,
+                                      ),
+                                    ),
+                                    Text(
+                                      tapZ.toStringAsFixed(1),
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark ? Colors.white70 : Colors.black54,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00BCD4).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '推奨しきい値',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isDark ? Colors.white54 : Colors.black45,
+                                    ),
+                                  ),
+                                  Text(
+                                    calculatedThreshold.toStringAsFixed(1),
+                                    style: const TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF00BCD4),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                if (phase == 0) ...[
+                  TextButton(
+                    onPressed: () {
+                      cleanup();
+                      Navigator.pop(context);
+                    },
+                    child: Text(
+                      'キャンセル',
+                      style: TextStyle(
+                        color: isDark ? Colors.white54 : Colors.black45,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: startCalibration,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00BCD4),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('開始'),
+                  ),
+                ],
+                if (phase == 1 || phase == 2 || phase == 3) ...[
+                  TextButton(
+                    onPressed: () {
+                      cleanup();
+                      Navigator.pop(context);
+                    },
+                    child: Text(
+                      'キャンセル',
+                      style: TextStyle(
+                        color: isDark ? Colors.white54 : Colors.black45,
+                      ),
+                    ),
+                  ),
+                ],
+                if (phase == 4) ...[
+                  TextButton(
+                    onPressed: () {
+                      cleanup();
+                      Navigator.pop(context);
+                    },
+                    child: Text(
+                      '適用しない',
+                      style: TextStyle(
+                        color: isDark ? Colors.white54 : Colors.black45,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      // Apply the calculated threshold
+                      parentSync(() {
+                        _impactThreshold = calculatedThreshold;
+                        _saveDouble('impact_threshold', _impactThreshold);
+                      });
+                      cleanup();
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('しきい値を ${calculatedThreshold.toStringAsFixed(1)} に設定しました'),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00BCD4),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('適用'),
+                  ),
+                ],
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showSoundCalibrationDialog(void Function(void Function()) parentSync) async {
+    // Request microphone permission first
+    final status = await Permission.microphone.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('マイクの許可が必要です'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
+    final isDark = themeNotifier.value;
+
+    // Calibration state
+    int phase = 0; // 0: ready, 1: running, 2: waiting for tap, 3: complete
+    double runningMaxDb = 0.0;
+    double currentDb = 0.0;
+    double tapDb = 0.0;
+    int countdown = 5;
+    double calculatedThreshold = 0.0;
+    StreamSubscription<NoiseReading>? calibrationSubscription;
+    Timer? countdownTimer;
+    final noiseMeter = NoiseMeter();
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            // Start calibration phase 1 (running measurement)
+            void startRunningPhase() {
+              dialogSetState(() {
+                phase = 1;
+                countdown = 5;
+                runningMaxDb = 0.0;
+              });
+
+              calibrationSubscription = noiseMeter.noise.listen((NoiseReading reading) {
+                if (phase == 1) {
+                  dialogSetState(() {
+                    currentDb = reading.maxDecibel;
+                    if (reading.maxDecibel > runningMaxDb) {
+                      runningMaxDb = reading.maxDecibel;
+                    }
+                  });
+                } else if (phase == 2) {
+                  dialogSetState(() {
+                    currentDb = reading.maxDecibel;
+                  });
+                  // Detect tap: if current reading is significantly higher than running max
+                  if (reading.maxDecibel > runningMaxDb + 10) {
+                    dialogSetState(() {
+                      tapDb = reading.maxDecibel;
+                      phase = 3;
+                      // Calculate threshold: 60% between running max and tap
+                      calculatedThreshold = runningMaxDb + (tapDb - runningMaxDb) * 0.6;
+                      // Clamp to valid range
+                      calculatedThreshold = calculatedThreshold.clamp(50.0, 120.0);
+                      // Round to 1 decimal place
+                      calculatedThreshold = (calculatedThreshold * 10).round() / 10;
+                    });
+                    calibrationSubscription?.cancel();
+                  }
+                }
+              });
+
+              // Countdown timer for running phase
+              countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+                if (countdown > 1) {
+                  dialogSetState(() {
+                    countdown--;
+                  });
+                } else {
+                  timer.cancel();
+                  // Move to tap detection phase
+                  dialogSetState(() {
+                    phase = 2;
+                  });
+                }
+              });
+            }
+
+            // Cleanup function
+            void cleanup() {
+              calibrationSubscription?.cancel();
+              countdownTimer?.cancel();
+            }
+
+            return AlertDialog(
+              backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.tune,
+                    color: const Color(0xFF00BCD4),
+                    size: 24,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    '音キャリブレーション',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Phase 0: Ready
+                    if (phase == 0) ...[
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF0D2A3A) : const Color(0xFFE3F2FD),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.directions_run,
+                              size: 48,
+                              color: const Color(0xFF00BCD4),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              '手順',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '1. スマホを腰に固定してください\n'
+                              '2. 開始ボタンを押した後、5秒間足踏みまたは走ってください\n'
+                              '3. 音が鳴ったらスマホを叩いてください',
+                              style: TextStyle(
+                                fontSize: 14,
+                                height: 1.6,
+                                color: isDark ? Colors.white70 : Colors.black54,
+                              ),
+                              textAlign: TextAlign.left,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    // Phase 1: Running measurement
+                    if (phase == 1) ...[
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4CAF50).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFF4CAF50),
+                            width: 2,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.directions_run,
+                              size: 48,
+                              color: const Color(0xFF4CAF50),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '足踏み/走ってください',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              '$countdown',
+                              style: TextStyle(
+                                fontSize: 56,
+                                fontWeight: FontWeight.w900,
+                                color: const Color(0xFF4CAF50),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '現在: ${currentDb.toStringAsFixed(1)} dB',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: isDark ? Colors.white70 : Colors.black54,
+                              ),
+                            ),
+                            Text(
+                              '最大: ${runningMaxDb.toStringAsFixed(1)} dB',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    // Phase 2: Waiting for tap
+                    if (phase == 2) ...[
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF9800).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFFFF9800),
+                            width: 2,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.touch_app,
+                              size: 48,
+                              color: const Color(0xFFFF9800),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'スマホを叩いてください！',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              '現在: ${currentDb.toStringAsFixed(1)} dB',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: isDark ? Colors.white70 : Colors.black54,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '走行時最大: ${runningMaxDb.toStringAsFixed(1)} dB',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark ? Colors.white54 : Colors.black45,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    // Phase 3: Complete
+                    if (phase == 3) ...[
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00BCD4).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFF00BCD4),
+                            width: 2,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              size: 48,
+                              color: const Color(0xFF00BCD4),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'キャリブレーション完了！',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                Column(
+                                  children: [
+                                    Text(
+                                      '走行時',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark ? Colors.white54 : Colors.black45,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${runningMaxDb.toStringAsFixed(1)} dB',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark ? Colors.white70 : Colors.black54,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Icon(
+                                  Icons.arrow_forward,
+                                  color: isDark ? Colors.white38 : Colors.black26,
+                                ),
+                                Column(
+                                  children: [
+                                    Text(
+                                      '叩いた時',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark ? Colors.white54 : Colors.black45,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${tapDb.toStringAsFixed(1)} dB',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark ? Colors.white70 : Colors.black54,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00BCD4).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '推奨しきい値',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isDark ? Colors.white54 : Colors.black45,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${calculatedThreshold.toStringAsFixed(1)} dB',
+                                    style: TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w900,
+                                      color: const Color(0xFF00BCD4),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                if (phase == 0) ...[
+                  TextButton(
+                    onPressed: () {
+                      cleanup();
+                      Navigator.pop(context);
+                    },
+                    child: Text(
+                      'キャンセル',
+                      style: TextStyle(
+                        color: isDark ? Colors.white54 : Colors.black45,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: startRunningPhase,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00BCD4),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('開始'),
+                  ),
+                ],
+                if (phase == 1 || phase == 2) ...[
+                  TextButton(
+                    onPressed: () {
+                      cleanup();
+                      Navigator.pop(context);
+                    },
+                    child: Text(
+                      'キャンセル',
+                      style: TextStyle(
+                        color: isDark ? Colors.white54 : Colors.black45,
+                      ),
+                    ),
+                  ),
+                ],
+                if (phase == 3) ...[
+                  TextButton(
+                    onPressed: () {
+                      cleanup();
+                      Navigator.pop(context);
+                    },
+                    child: Text(
+                      '適用しない',
+                      style: TextStyle(
+                        color: isDark ? Colors.white54 : Colors.black45,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      // Apply the calculated threshold
+                      parentSync(() {
+                        _soundThreshold = calculatedThreshold;
+                        _saveDouble('sound_threshold', _soundThreshold);
+                      });
+                      cleanup();
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('しきい値を ${calculatedThreshold.toStringAsFixed(1)} dB に設定しました'),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00BCD4),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('適用'),
+                  ),
+                ],
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _showTimeLogsDialog() async {
@@ -1503,9 +2518,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                     ],
                                   ),
                                   const SizedBox(height: 20),
-                                  // Impact threshold setting
+                                  // Trigger method selection
                                   Text(
-                                    '衝撃検知しきい値',
+                                    'トリガー',
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
@@ -1514,100 +2529,395 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'タップを検知する最小の衝撃強度',
+                                    '計測を停止するトリガーの種類',
                                     style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.white54,
+                                      color: isDark ? Colors.white54 : Colors.black45,
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Row(
+                                  const SizedBox(height: 12),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
                                     children: [
-                                      Expanded(
-                                        child: SliderTheme(
-                                          data: SliderTheme.of(context).copyWith(
-                                            trackShape: const RoundedRectSliderTrackShape(),
-                                          ),
-                                          child: Slider(
-                                            value: _impactThreshold,
-                                            min: 5.0,
-                                            max: 50.0,
-                                            onChanged: (value) {
-                                              sync(() {
-                                                _impactThreshold = (value * 10).round() / 10;
-                                                _saveDouble('impact_threshold', _impactThreshold);
-                                              });
-                                            },
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        width: 60,
-                                        child: Text(
-                                          '${_impactThreshold.toStringAsFixed(1)}',
-                                          textAlign: TextAlign.end,
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: isDark ? Colors.white : Colors.black87,
-                                          ),
-                                        ),
-                                      ),
+                                      _buildTriggerChip('impact', '衝撃', Icons.vibration, isDark, sync),
+                                      _buildTriggerChip('sound', '音', Icons.mic, isDark, sync),
+                                      _buildTriggerChip('impact_and_sound', '衝撃と音', Icons.sensors, isDark, sync),
+                                      _buildTriggerChip('tap', 'タップ', Icons.touch_app, isDark, sync),
                                     ],
                                   ),
-                                  const SizedBox(height: 16),
-                                  // Ignore duration setting
-                                  Text(
-                                    '振動無視時間',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: isDark ? Colors.white70 : Colors.black54,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'GO後、走行中の振動を無視する時間（秒）',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.white54,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: SliderTheme(
-                                          data: SliderTheme.of(context).copyWith(
-                                            trackShape: const RoundedRectSliderTrackShape(),
-                                          ),
-                                          child: Slider(
-                                            value: _ignoreDuration,
-                                            min: 0.0,
-                                            max: 10.0,
-                                            onChanged: (value) {
-                                              sync(() {
-                                                _ignoreDuration = (value * 10).round() / 10;
-                                                _saveDouble('ignore_duration', _ignoreDuration);
-                                              });
-                                            },
-                                          ),
+                                  // Impact settings (show when trigger includes impact)
+                                  if (_triggerMethod == 'impact' || _triggerMethod == 'impact_and_sound') ...[
+                                    const SizedBox(height: 24),
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
                                         ),
                                       ),
-                                      SizedBox(
-                                        width: 60,
-                                        child: Text(
-                                          '${_ignoreDuration.toStringAsFixed(1)}秒',
-                                          textAlign: TextAlign.end,
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: isDark ? Colors.white : Colors.black87,
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.vibration,
+                                                size: 18,
+                                                color: isDark ? Colors.white70 : Colors.black54,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                '衝撃設定',
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: isDark ? Colors.white : Colors.black87,
+                                                ),
+                                              ),
+                                            ],
                                           ),
+                                          const SizedBox(height: 16),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    '衝撃検知しきい値 (Z軸)',
+                                                    style: TextStyle(
+                                                      fontSize: 13,
+                                                      fontWeight: FontWeight.w500,
+                                                      color: isDark ? Colors.white70 : Colors.black54,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    '前後方向の加速度で検知',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color: isDark ? Colors.white38 : Colors.black38,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              GestureDetector(
+                                                onTap: () => _showImpactCalibrationDialog(sync),
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFF00BCD4).withOpacity(0.15),
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    border: Border.all(
+                                                      color: const Color(0xFF00BCD4),
+                                                      width: 1,
+                                                    ),
+                                                  ),
+                                                  child: const Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        Icons.tune,
+                                                        size: 14,
+                                                        color: Color(0xFF00BCD4),
+                                                      ),
+                                                      SizedBox(width: 4),
+                                                      Text(
+                                                        'キャリブレーション',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.w600,
+                                                          color: Color(0xFF00BCD4),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: SliderTheme(
+                                                  data: SliderTheme.of(context).copyWith(
+                                                    trackShape: const RoundedRectSliderTrackShape(),
+                                                  ),
+                                                  child: Slider(
+                                                    value: _impactThreshold,
+                                                    min: 5.0,
+                                                    max: 50.0,
+                                                    onChanged: (value) {
+                                                      sync(() {
+                                                        _impactThreshold = (value * 10).round() / 10;
+                                                        _saveDouble('impact_threshold', _impactThreshold);
+                                                      });
+                                                    },
+                                                  ),
+                                                ),
+                                              ),
+                                              SizedBox(
+                                                width: 55,
+                                                child: Text(
+                                                  '${_impactThreshold.toStringAsFixed(1)}',
+                                                  textAlign: TextAlign.end,
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: isDark ? Colors.white : Colors.black87,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 12),
+                                          Text(
+                                            '振動無視時間',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w500,
+                                              color: isDark ? Colors.white70 : Colors.black54,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: SliderTheme(
+                                                  data: SliderTheme.of(context).copyWith(
+                                                    trackShape: const RoundedRectSliderTrackShape(),
+                                                  ),
+                                                  child: Slider(
+                                                    value: _ignoreDuration,
+                                                    min: 0.0,
+                                                    max: 10.0,
+                                                    onChanged: (value) {
+                                                      sync(() {
+                                                        _ignoreDuration = (value * 10).round() / 10;
+                                                        _saveDouble('ignore_duration', _ignoreDuration);
+                                                      });
+                                                    },
+                                                  ),
+                                                ),
+                                              ),
+                                              SizedBox(
+                                                width: 55,
+                                                child: Text(
+                                                  '${_ignoreDuration.toStringAsFixed(1)}秒',
+                                                  textAlign: TextAlign.end,
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: isDark ? Colors.white : Colors.black87,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                  // Sound settings (show when trigger includes sound)
+                                  if (_triggerMethod == 'sound' || _triggerMethod == 'impact_and_sound') ...[
+                                    const SizedBox(height: 16),
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.mic,
+                                                size: 18,
+                                                color: isDark ? Colors.white70 : Colors.black54,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                '音設定',
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: isDark ? Colors.white : Colors.black87,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 16),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                '音検知しきい値 (dB)',
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w500,
+                                                  color: isDark ? Colors.white70 : Colors.black54,
+                                                ),
+                                              ),
+                                              GestureDetector(
+                                                onTap: () => _showSoundCalibrationDialog(sync),
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFF00BCD4).withOpacity(0.15),
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    border: Border.all(
+                                                      color: const Color(0xFF00BCD4),
+                                                      width: 1,
+                                                    ),
+                                                  ),
+                                                  child: const Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        Icons.tune,
+                                                        size: 14,
+                                                        color: Color(0xFF00BCD4),
+                                                      ),
+                                                      SizedBox(width: 4),
+                                                      Text(
+                                                        'キャリブレーション',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.w600,
+                                                          color: Color(0xFF00BCD4),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: SliderTheme(
+                                                  data: SliderTheme.of(context).copyWith(
+                                                    trackShape: const RoundedRectSliderTrackShape(),
+                                                  ),
+                                                  child: Slider(
+                                                    value: _soundThreshold,
+                                                    min: 50.0,
+                                                    max: 120.0,
+                                                    onChanged: (value) {
+                                                      sync(() {
+                                                        _soundThreshold = (value * 10).round() / 10;
+                                                        _saveDouble('sound_threshold', _soundThreshold);
+                                                      });
+                                                    },
+                                                  ),
+                                                ),
+                                              ),
+                                              SizedBox(
+                                                width: 60,
+                                                child: Text(
+                                                  '${_soundThreshold.toStringAsFixed(1)}dB',
+                                                  textAlign: TextAlign.end,
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: isDark ? Colors.white : Colors.black87,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 12),
+                                          Text(
+                                            '音無視時間',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w500,
+                                              color: isDark ? Colors.white70 : Colors.black54,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: SliderTheme(
+                                                  data: SliderTheme.of(context).copyWith(
+                                                    trackShape: const RoundedRectSliderTrackShape(),
+                                                  ),
+                                                  child: Slider(
+                                                    value: _soundIgnoreDuration,
+                                                    min: 0.0,
+                                                    max: 10.0,
+                                                    onChanged: (value) {
+                                                      sync(() {
+                                                        _soundIgnoreDuration = (value * 10).round() / 10;
+                                                        _saveDouble('sound_ignore_duration', _soundIgnoreDuration);
+                                                      });
+                                                    },
+                                                  ),
+                                                ),
+                                              ),
+                                              SizedBox(
+                                                width: 55,
+                                                child: Text(
+                                                  '${_soundIgnoreDuration.toStringAsFixed(1)}秒',
+                                                  textAlign: TextAlign.end,
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: isDark ? Colors.white : Colors.black87,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                  // Tap info (show when trigger is tap)
+                                  if (_triggerMethod == 'tap') ...[
+                                    const SizedBox(height: 16),
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.info_outline,
+                                            size: 18,
+                                            color: isDark ? Colors.white54 : Colors.black45,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              '計測中に画面をタップすると計測が停止します',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: isDark ? Colors.white70 : Colors.black54,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -1975,6 +3285,71 @@ class _StartCallHomePageState extends State<StartCallHomePage>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildTriggerChip(String value, String label, IconData icon, bool isDark, void Function(void Function()) sync) {
+    final isSelected = _triggerMethod == value;
+    return GestureDetector(
+      onTap: () async {
+        // Request microphone permission if sound is selected
+        if (value == 'sound' || value == 'impact_and_sound') {
+          final status = await Permission.microphone.request();
+          if (!status.isGranted) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('マイクの許可が必要です'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            }
+            return;
+          }
+        }
+        sync(() {
+          _triggerMethod = value;
+          _saveString('trigger_method', value);
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF00BCD4).withOpacity(0.2)
+              : (isDark ? const Color(0xFF1A2332) : const Color(0xFFF0F0F0)),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF00BCD4)
+                : (isDark ? const Color(0xFF2A3543) : const Color(0xFFD0D0D0)),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: isSelected
+                  ? const Color(0xFF00BCD4)
+                  : (isDark ? Colors.white70 : Colors.black54),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected
+                    ? const Color(0xFF00BCD4)
+                    : (isDark ? Colors.white70 : Colors.black54),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -2473,7 +3848,10 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         ),
         Expanded(
           child: Center(
-            child: _buildTimerPanel(countdownText, showCountdown, isLandscape: false),
+            child: GestureDetector(
+              onTap: (_isMeasuring && _triggerMethod == 'tap') ? _stopTimeMeasurement : null,
+              child: _buildTimerPanel(countdownText, showCountdown, isLandscape: false),
+            ),
           ),
         ),
         if (!_isSettingsOpen) _buildButtons(isLandscape: false),
@@ -2551,7 +3929,10 @@ class _StartCallHomePageState extends State<StartCallHomePage>
           // Center: Timer panel (larger)
           Expanded(
             child: Center(
-              child: _buildTimerPanel(countdownText, showCountdown, isLandscape: true),
+              child: GestureDetector(
+                onTap: (_isMeasuring && _triggerMethod == 'tap') ? _stopTimeMeasurement : null,
+                child: _buildTimerPanel(countdownText, showCountdown, isLandscape: true),
+              ),
             ),
           ),
           // Right side: Buttons (smaller)
