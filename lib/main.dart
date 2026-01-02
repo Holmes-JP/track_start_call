@@ -339,7 +339,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   final Stopwatch _stopwatch = Stopwatch();
   double? _measuredTime; // Measured time in seconds
   bool _showMeasurementResult = false;
-  bool _autoSavedResult = false; // True when showing auto-saved result (reset button only)
+  bool _autoSavedResult =
+      false; // True when showing auto-saved result (reset button only)
   String _logSortOrder = 'date_desc'; // Default sort order for logs
 
   // Hidden command tap tracking
@@ -1089,7 +1090,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                             color: isDark ? Colors.white38 : Colors.black38,
                           ),
                           filled: true,
-                          fillColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF5F5F5),
+                          fillColor: isDark
+                              ? const Color(0xFF2A2A2A)
+                              : const Color(0xFFF5F5F5),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -1125,7 +1128,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                             color: isDark ? Colors.white38 : Colors.black38,
                           ),
                           filled: true,
-                          fillColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF5F5F5),
+                          fillColor: isDark
+                              ? const Color(0xFF2A2A2A)
+                              : const Color(0xFFF5F5F5),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -1235,6 +1240,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     setState(() {
       _isSettingsOpen = true;
     });
+    // Create controller outside of builder to prevent recreation on rebuild
+    final lagController = TextEditingController(
+      text: _lagCompensation.toStringAsFixed(2),
+    );
+    final lagFocusNode = FocusNode();
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1438,12 +1448,13 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                           const SizedBox(height: 12),
                           // Time measurement setting
                           Container(
-                            padding: EdgeInsets.symmetric(
-                              vertical: 16,
-                              horizontal: 20,
-                            ).copyWith(
-                              bottom: _timeMeasurementEnabled ? 20 : 16,
-                            ),
+                            padding:
+                                EdgeInsets.symmetric(
+                                  vertical: 16,
+                                  horizontal: 20,
+                                ).copyWith(
+                                  bottom: _timeMeasurementEnabled ? 20 : 16,
+                                ),
                             decoration: BoxDecoration(
                               color: isDark
                                   ? const Color(0xFF141B26)
@@ -1464,7 +1475,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                               children: [
                                 // Header row with switch
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Row(
                                       children: [
@@ -1505,7 +1517,10 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                               // Disable loop when time measurement is enabled
                                               if (value && _loopEnabled) {
                                                 _loopEnabled = false;
-                                                _saveBool('loop_enabled', false);
+                                                _saveBool(
+                                                  'loop_enabled',
+                                                  false,
+                                                );
                                               }
                                             });
                                           },
@@ -1552,11 +1567,16 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                           fit: BoxFit.contain,
                                           child: Switch(
                                             value: _autoSaveEnabled,
-                                            activeColor: const Color(0xFF00BCD4),
+                                            activeColor: const Color(
+                                              0xFF00BCD4,
+                                            ),
                                             onChanged: (value) {
                                               sync(() {
                                                 _autoSaveEnabled = value;
-                                                _saveBool('auto_save_enabled', value);
+                                                _saveBool(
+                                                  'auto_save_enabled',
+                                                  value,
+                                                );
                                               });
                                             },
                                           ),
@@ -1668,193 +1688,208 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                       ),
                                     ),
                                   ],
-                                  // Lag compensation setting
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'ラグを考慮',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: isDark
-                                          ? Colors.white70
-                                          : Colors.black54,
+                                  // Lag compensation setting (only show for hardware button trigger)
+                                  if (_triggerMethod == 'hardware_button') ...[
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'ラグを考慮',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: isDark
+                                            ? Colors.white70
+                                            : Colors.black54,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'トリガーの遅延を補正します（0〜1秒）',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: isDark
-                                          ? Colors.white54
-                                          : Colors.black45,
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'トリガーの遅延を補正します（0〜1秒）',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark
+                                            ? Colors.white54
+                                            : Colors.black45,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: SliderTheme(
-                                          data: SliderTheme.of(context)
-                                              .copyWith(
-                                                activeTrackColor: const Color(
-                                                  0xFF00BCD4,
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: SliderTheme(
+                                            data: SliderTheme.of(context)
+                                                .copyWith(
+                                                  activeTrackColor: const Color(
+                                                    0xFF00BCD4,
+                                                  ),
+                                                  inactiveTrackColor: isDark
+                                                      ? const Color(0xFF1A2332)
+                                                      : const Color(0xFFE0E0E0),
+                                                  thumbColor: const Color(
+                                                    0xFF00BCD4,
+                                                  ),
+                                                  overlayColor: const Color(
+                                                    0xFF00BCD4,
+                                                  ).withOpacity(0.2),
                                                 ),
-                                                inactiveTrackColor: isDark
-                                                    ? const Color(0xFF1A2332)
-                                                    : const Color(0xFFE0E0E0),
-                                                thumbColor: const Color(
-                                                  0xFF00BCD4,
+                                            child: Slider(
+                                              value: _lagCompensation,
+                                              min: 0.0,
+                                              max: 1.0,
+                                              divisions: 100,
+                                              onChanged: (value) {
+                                                sync(() {
+                                                  _lagCompensation = value;
+                                                  _saveDouble(
+                                                    'lag_compensation',
+                                                    value,
+                                                  );
+                                                });
+                                                // Unfocus text field when slider is moved
+                                                if (lagFocusNode.hasFocus) {
+                                                  lagFocusNode.unfocus();
+                                                }
+                                                lagController.text =
+                                                    value.toStringAsFixed(2);
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        SizedBox(
+                                          width: 70,
+                                          child: TextField(
+                                            controller: lagController,
+                                            focusNode: lagFocusNode,
+                                            keyboardType:
+                                                const TextInputType.numberWithOptions(
+                                                  decimal: true,
                                                 ),
-                                                overlayColor: const Color(
-                                                  0xFF00BCD4,
-                                                ).withOpacity(0.2),
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black87,
+                                            ),
+                                            decoration: InputDecoration(
+                                              isDense: true,
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 10,
+                                                    horizontal: 8,
+                                                  ),
+                                              suffixText: '秒',
+                                              suffixStyle: TextStyle(
+                                                fontSize: 12,
+                                                color: isDark
+                                                    ? Colors.white54
+                                                    : Colors.black45,
                                               ),
-                                          child: Slider(
-                                            value: _lagCompensation,
-                                            min: 0.0,
-                                            max: 1.0,
-                                            divisions: 100,
-                                            onChanged: (value) {
+                                              filled: true,
+                                              fillColor: isDark
+                                                  ? const Color(0xFF1A2332)
+                                                  : const Color(0xFFF0F0F0),
+                                              border: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                borderSide: BorderSide(
+                                                  color: isDark
+                                                      ? const Color(0xFF2A3543)
+                                                      : const Color(0xFFD0D0D0),
+                                                ),
+                                              ),
+                                              enabledBorder: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                borderSide: BorderSide(
+                                                  color: isDark
+                                                      ? const Color(0xFF2A3543)
+                                                      : const Color(0xFFD0D0D0),
+                                                ),
+                                              ),
+                                              focusedBorder: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                borderSide: const BorderSide(
+                                                  color: Color(0xFF00BCD4),
+                                                  width: 2,
+                                                ),
+                                              ),
+                                            ),
+                                            inputFormatters: [
+                                              FilteringTextInputFormatter.allow(
+                                                RegExp(r'^\d*\.?\d{0,2}'),
+                                              ),
+                                            ],
+                                            onSubmitted: (value) {
+                                              final trimmed = value.trim();
+                                              double newValue;
+                                              if (trimmed.isEmpty) {
+                                                // Empty input: use current slider value
+                                                newValue = _lagCompensation;
+                                              } else {
+                                                final parsed =
+                                                    double.tryParse(trimmed);
+                                                if (parsed != null) {
+                                                  newValue =
+                                                      parsed.clamp(0.0, 1.0);
+                                                } else {
+                                                  // Invalid input: use current value
+                                                  newValue = _lagCompensation;
+                                                }
+                                              }
                                               sync(() {
-                                                _lagCompensation = value;
+                                                _lagCompensation = newValue;
                                                 _saveDouble(
                                                   'lag_compensation',
-                                                  value,
+                                                  newValue,
                                                 );
                                               });
+                                              lagController.text =
+                                                  newValue.toStringAsFixed(2);
                                             },
                                           ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      SizedBox(
-                                        width: 70,
-                                        child: TextField(
-                                          controller: TextEditingController(
-                                            text: _lagCompensation
-                                                .toStringAsFixed(2),
+                                      ],
+                                    ),
+                                    if (_lagCompensation > 0) ...[
+                                      const SizedBox(height: 12),
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: const Color(
+                                            0xFF00BCD4,
+                                          ).withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: const Color(
+                                              0xFF00BCD4,
+                                            ).withOpacity(0.3),
                                           ),
-                                          keyboardType:
-                                              const TextInputType.numberWithOptions(
-                                                decimal: true,
-                                              ),
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: isDark
-                                                ? Colors.white
-                                                : Colors.black87,
-                                          ),
-                                          decoration: InputDecoration(
-                                            isDense: true,
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                  vertical: 10,
-                                                  horizontal: 8,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.timer,
+                                              size: 16,
+                                              color: Color(0xFF00BCD4),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                '計測終了時、タイムから${_lagCompensation.toStringAsFixed(2)}秒を差し引きます',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Color(0xFF00BCD4),
                                                 ),
-                                            suffixText: '秒',
-                                            suffixStyle: TextStyle(
-                                              fontSize: 12,
-                                              color: isDark
-                                                  ? Colors.white54
-                                                  : Colors.black45,
-                                            ),
-                                            filled: true,
-                                            fillColor: isDark
-                                                ? const Color(0xFF1A2332)
-                                                : const Color(0xFFF0F0F0),
-                                            border: OutlineInputBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              borderSide: BorderSide(
-                                                color: isDark
-                                                    ? const Color(0xFF2A3543)
-                                                    : const Color(0xFFD0D0D0),
                                               ),
-                                            ),
-                                            enabledBorder: OutlineInputBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              borderSide: BorderSide(
-                                                color: isDark
-                                                    ? const Color(0xFF2A3543)
-                                                    : const Color(0xFFD0D0D0),
-                                              ),
-                                            ),
-                                            focusedBorder: OutlineInputBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              borderSide: const BorderSide(
-                                                color: Color(0xFF00BCD4),
-                                                width: 2,
-                                              ),
-                                            ),
-                                          ),
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter.allow(
-                                              RegExp(r'^\d*\.?\d{0,2}'),
                                             ),
                                           ],
-                                          onSubmitted: (value) {
-                                            final parsed = double.tryParse(
-                                              value,
-                                            );
-                                            if (parsed != null) {
-                                              final clamped = parsed.clamp(
-                                                0.0,
-                                                1.0,
-                                              );
-                                              sync(() {
-                                                _lagCompensation = clamped;
-                                                _saveDouble(
-                                                  'lag_compensation',
-                                                  clamped,
-                                                );
-                                              });
-                                            }
-                                          },
                                         ),
                                       ),
                                     ],
-                                  ),
-                                  if (_lagCompensation > 0) ...[
-                                    const SizedBox(height: 12),
-                                    Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: const Color(
-                                          0xFF00BCD4,
-                                        ).withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: const Color(
-                                            0xFF00BCD4,
-                                          ).withOpacity(0.3),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          const Icon(
-                                            Icons.timer,
-                                            size: 16,
-                                            color: Color(0xFF00BCD4),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              '計測終了時、タイムから${_lagCompensation.toStringAsFixed(2)}秒を差し引きます',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Color(0xFF00BCD4),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
+                                  ], // End of if (_triggerMethod == 'hardware_button')
                                 ],
                               ],
                             ),
@@ -2133,6 +2168,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         );
       },
     );
+    // Dispose controllers after modal is closed
+    lagController.dispose();
+    lagFocusNode.dispose();
     if (mounted) {
       setState(() {
         _isSettingsOpen = false;
@@ -2464,7 +2502,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                         fontSize: 16,
                         color: isDark
                             ? (isSelected ? Colors.white : Colors.white70)
-                            : (isSelected ? const Color(0xFF3A3A3A) : const Color(0xFF1F1F1F)),
+                            : (isSelected
+                                  ? const Color(0xFF3A3A3A)
+                                  : const Color(0xFF1F1F1F)),
                         fontWeight: isSelected
                             ? FontWeight.w600
                             : FontWeight.normal,
@@ -2803,7 +2843,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                   ),
                 ),
               ),
-              if (_timeMeasurementEnabled)
+              if (_timeMeasurementEnabled && !_isSettingsOpen)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
@@ -2858,7 +2898,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: isDark ? const Color(0xFF4DD0E1) : const Color(0xFF00838F),
+                            color: isDark
+                                ? const Color(0xFF4DD0E1)
+                                : const Color(0xFF00838F),
                           ),
                         ),
                       ],
@@ -2868,17 +2910,22 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: isDark ? const Color(0xFF4DD0E1) : const Color(0xFF00838F),
+                          color: isDark
+                              ? const Color(0xFF4DD0E1)
+                              : const Color(0xFF00838F),
                         ),
                       ),
-                      if (_lagCompensation > 0) ...[
+                      if (_lagCompensation > 0 &&
+                          _triggerMethod == 'hardware_button') ...[
                         const SizedBox(height: 3),
                         Text(
                           'ラグタイム：${_lagCompensation.toStringAsFixed(2)}秒',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: isDark ? const Color(0xFF4DD0E1) : const Color(0xFF00838F),
+                            color: isDark
+                                ? const Color(0xFF4DD0E1)
+                                : const Color(0xFF00838F),
                           ),
                         ),
                       ],
@@ -2886,7 +2933,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                   ),
                 )
               else
-                const SizedBox(width: 52), // Placeholder to keep settings button position stable
+                const SizedBox(
+                  width: 52,
+                ), // Placeholder to keep settings button position stable
             ],
           ),
         ),
@@ -2932,7 +2981,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                   ),
                 ),
               ),
-              if (_timeMeasurementEnabled) ...[
+              if (_timeMeasurementEnabled && !_isSettingsOpen) ...[
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -2988,7 +3037,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
-                            color: isDark ? const Color(0xFF4DD0E1) : const Color(0xFF00838F),
+                            color: isDark
+                                ? const Color(0xFF4DD0E1)
+                                : const Color(0xFF00838F),
                           ),
                         ),
                       ],
@@ -2998,17 +3049,22 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
-                          color: isDark ? const Color(0xFF4DD0E1) : const Color(0xFF00838F),
+                          color: isDark
+                              ? const Color(0xFF4DD0E1)
+                              : const Color(0xFF00838F),
                         ),
                       ),
-                      if (_lagCompensation > 0) ...[
+                      if (_lagCompensation > 0 &&
+                          _triggerMethod == 'hardware_button') ...[
                         const SizedBox(height: 2),
                         Text(
                           'ラグタイム：${_lagCompensation.toStringAsFixed(2)}秒',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
-                            color: isDark ? const Color(0xFF4DD0E1) : const Color(0xFF00838F),
+                            color: isDark
+                                ? const Color(0xFF4DD0E1)
+                                : const Color(0xFF00838F),
                           ),
                         ),
                       ],
@@ -3586,11 +3642,13 @@ class _NumberInputField extends StatefulWidget {
 
 class _NumberInputFieldState extends State<_NumberInputField> {
   late TextEditingController _controller;
+  late FocusNode _focusNode;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.value.toStringAsFixed(1));
+    _focusNode = FocusNode();
   }
 
   @override
@@ -3598,6 +3656,10 @@ class _NumberInputFieldState extends State<_NumberInputField> {
     super.didUpdateWidget(oldWidget);
     // Update text when value changes from parent (e.g., slider)
     if (oldWidget.value != widget.value) {
+      // Unfocus when slider is moved
+      if (_focusNode.hasFocus) {
+        _focusNode.unfocus();
+      }
       _controller.text = widget.value.toStringAsFixed(1);
     }
   }
@@ -3605,6 +3667,7 @@ class _NumberInputFieldState extends State<_NumberInputField> {
   @override
   void dispose() {
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -3637,6 +3700,7 @@ class _NumberInputFieldState extends State<_NumberInputField> {
       height: 50,
       child: TextField(
         controller: _controller,
+        focusNode: _focusNode,
         enabled: widget.enabled,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         textAlign: TextAlign.center,
@@ -3684,7 +3748,8 @@ class TimeLogsPage extends StatefulWidget {
   final Future<List<Map<String, dynamic>>> Function() loadTimeLogs;
   final Future<void> Function(int index) deleteTimeLog;
   final Future<void> Function() clearAllTimeLogs;
-  final Future<void> Function(int index, {String? title, String? memo}) updateTimeLog;
+  final Future<void> Function(int index, {String? title, String? memo})
+  updateTimeLog;
   final String logSortOrder;
   final void Function(String order) onSortOrderChanged;
 
@@ -3774,10 +3839,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text(
-              '削除',
-              style: TextStyle(color: Colors.red),
-            ),
+            child: const Text('削除', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -3798,10 +3860,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
     }
   }
 
-  void _openLogEditPage(
-    int index,
-    Map<String, dynamic> log,
-  ) async {
+  void _openLogEditPage(int index, Map<String, dynamic> log) async {
     final result = await Navigator.push<Map<String, String>>(
       context,
       MaterialPageRoute(
@@ -3813,7 +3872,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
         ),
       ),
     );
-    
+
     if (result != null) {
       await widget.updateTimeLog(
         index,
@@ -3838,24 +3897,27 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
             backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
             foregroundColor: isDark ? Colors.white : Colors.black87,
             elevation: 0,
-            leading: _isSelectionMode
-                ? IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _isSelectionMode = false;
-                        _selectedIndices.clear();
-                      });
-                    },
-                    icon: const Icon(Icons.close),
-                  )
-                : IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back),
-                  ),
+            centerTitle: false,
+            titleSpacing: 0,
+            toolbarHeight: kToolbarHeight,
+            leading: Center(
+              child: _isSelectionMode
+                  ? IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _isSelectionMode = false;
+                          _selectedIndices.clear();
+                        });
+                      },
+                      icon: const Icon(Icons.close),
+                    )
+                  : IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_back),
+                    ),
+            ),
             title: Text(
-              _isSelectionMode
-                  ? '${_selectedIndices.length}件選択中'
-                  : '計測ログ',
+              _isSelectionMode ? '${_selectedIndices.length}件選択中' : '計測ログ',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: isDark ? Colors.white : Colors.black87,
@@ -3954,8 +4016,9 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                   Icon(
                                     Icons.expand_more,
                                     size: 18,
-                                    color:
-                                        isDark ? Colors.white70 : Colors.black54,
+                                    color: isDark
+                                        ? Colors.white70
+                                        : Colors.black54,
                                   ),
                                 ],
                               ),
@@ -3969,8 +4032,9 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                               child: Text(
                                 '計測ログがありません',
                                 style: TextStyle(
-                                  color:
-                                      isDark ? Colors.white70 : Colors.black54,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.black54,
                                 ),
                               ),
                             )
@@ -3986,10 +4050,10 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                 );
                                 final dateStr =
                                     "${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}:${date.second.toString().padLeft(2, '0')}";
-                                final isSelected =
-                                    _selectedIndices.contains(sortedIndex);
-                                final title =
-                                    (log['title'] as String?) ?? '無題';
+                                final isSelected = _selectedIndices.contains(
+                                  sortedIndex,
+                                );
+                                final title = (log['title'] as String?) ?? '無題';
                                 final memo = (log['memo'] as String?) ?? '';
 
                                 return GestureDetector(
@@ -4014,10 +4078,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                         }
                                       });
                                     } else {
-                                      _openLogEditPage(
-                                        sortedIndex,
-                                        log,
-                                      );
+                                      _openLogEditPage(sortedIndex, log);
                                     }
                                   },
                                   child: Container(
@@ -4026,11 +4087,11 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                     decoration: BoxDecoration(
                                       color: isSelected
                                           ? (isDark
-                                              ? const Color(0xFF3A3A3A)
-                                              : const Color(0xFFE0E0E0))
+                                                ? const Color(0xFF3A3A3A)
+                                                : const Color(0xFFE0E0E0))
                                           : (isDark
-                                              ? const Color(0xFF1F1F1F)
-                                              : const Color(0xFFF5F5F5)),
+                                                ? const Color(0xFF1F1F1F)
+                                                : const Color(0xFFF5F5F5)),
                                       borderRadius: BorderRadius.circular(12),
                                       border: isSelected
                                           ? Border.all(
@@ -4099,19 +4160,22 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                         ),
                                         if (_isSelectionMode)
                                           Padding(
-                                            padding:
-                                                const EdgeInsets.only(left: 12),
+                                            padding: const EdgeInsets.only(
+                                              left: 12,
+                                            ),
                                             child: Checkbox(
                                               value: isSelected,
                                               activeColor: Colors.red,
                                               onChanged: (value) {
                                                 setState(() {
                                                   if (value == true) {
-                                                    _selectedIndices
-                                                        .add(sortedIndex);
+                                                    _selectedIndices.add(
+                                                      sortedIndex,
+                                                    );
                                                   } else {
-                                                    _selectedIndices
-                                                        .remove(sortedIndex);
+                                                    _selectedIndices.remove(
+                                                      sortedIndex,
+                                                    );
                                                     if (_selectedIndices
                                                         .isEmpty) {
                                                       _isSelectionMode = false;
@@ -4257,14 +4321,19 @@ class _LogEditPageState extends State<LogEditPage> {
                       color: isDark ? Colors.white38 : Colors.black26,
                     ),
                     filled: true,
-                    fillColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF5F5F5),
+                    fillColor: isDark
+                        ? const Color(0xFF2A2A2A)
+                        : const Color(0xFFF5F5F5),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFFFFD700), width: 2),
+                      borderSide: const BorderSide(
+                        color: Color(0xFFFFD700),
+                        width: 2,
+                      ),
                     ),
                   ),
                   style: TextStyle(
@@ -4291,14 +4360,19 @@ class _LogEditPageState extends State<LogEditPage> {
                       color: isDark ? Colors.white38 : Colors.black26,
                     ),
                     filled: true,
-                    fillColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF5F5F5),
+                    fillColor: isDark
+                        ? const Color(0xFF2A2A2A)
+                        : const Color(0xFFF5F5F5),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFFFFD700), width: 2),
+                      borderSide: const BorderSide(
+                        color: Color(0xFFFFD700),
+                        width: 2,
+                      ),
                     ),
                   ),
                   style: TextStyle(
@@ -4316,4 +4390,3 @@ class _LogEditPageState extends State<LogEditPage> {
     );
   }
 }
-
