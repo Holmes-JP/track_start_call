@@ -1290,7 +1290,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     setState(() {
       _isSettingsOpen = true;
     });
-    
+
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -1429,7 +1429,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         ),
       ),
     );
-    
+
     if (mounted) {
       setState(() {
         _isSettingsOpen = false;
@@ -3034,7 +3034,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
   late String _logSortOrder;
   Set<DateTime> _filterDates = {};
   bool _isFilteredByCalendar = false;
-  
+
   // Search state
   String _searchQuery = '';
   bool _isSearching = false;
@@ -3101,7 +3101,11 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
 
     // Apply search filter if active (space-separated OR search)
     if (_searchQuery.isNotEmpty) {
-      final keywords = _searchQuery.toLowerCase().split(RegExp(r'\s+')).where((k) => k.isNotEmpty).toList();
+      final keywords = _searchQuery
+          .toLowerCase()
+          .split(RegExp(r'\s+'))
+          .where((k) => k.isNotEmpty)
+          .toList();
       if (keywords.isNotEmpty) {
         indices = indices.where((i) {
           final log = _logs[i];
@@ -3109,8 +3113,12 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
           final memo = ((log['memo'] as String?) ?? '').toLowerCase();
           final time = (log['time'] as num).toDouble().toStringAsFixed(2);
           // Match if any keyword is found in title, memo, or time
-          return keywords.any((keyword) =>
-              title.contains(keyword) || memo.contains(keyword) || time.contains(keyword));
+          return keywords.any(
+            (keyword) =>
+                title.contains(keyword) ||
+                memo.contains(keyword) ||
+                time.contains(keyword),
+          );
         }).toList();
       }
     }
@@ -3734,7 +3742,9 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                       decoration: BoxDecoration(
                         color: selectedDates.isNotEmpty
                             ? const Color(0xFF2196F3)
-                            : (isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0)),
+                            : (isDark
+                                  ? const Color(0xFF2A3543)
+                                  : const Color(0xFFE0E0E0)),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -4003,7 +4013,9 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                     ),
                                     decoration: BoxDecoration(
                                       color: _isSearching
-                                          ? const Color(0xFFFF9800).withOpacity(0.15)
+                                          ? const Color(
+                                              0xFFFF9800,
+                                            ).withOpacity(0.15)
                                           : Colors.transparent,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
@@ -4699,7 +4711,9 @@ class _SettingsPageState extends State<SettingsPage> {
     _onAudioPath = widget.onAudioPath;
     _setAudioPath = widget.setAudioPath;
     _goAudioPath = widget.goAudioPath;
-    _lagController = TextEditingController(text: _lagCompensation.toStringAsFixed(2));
+    _lagController = TextEditingController(
+      text: _lagCompensation.toStringAsFixed(2),
+    );
     _lagFocusNode = FocusNode();
   }
 
@@ -4831,7 +4845,9 @@ class _SettingsPageState extends State<SettingsPage> {
                             : (isSelected
                                   ? const Color(0xFF3A3A3A)
                                   : const Color(0xFF1F1F1F)),
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.normal,
                       ),
                     ),
                   );
@@ -5027,7 +5043,9 @@ class _SettingsPageState extends State<SettingsPage> {
                   width: 48,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF3A4654) : const Color(0xFFBDBDBD),
+                    color: isDark
+                        ? const Color(0xFF3A4654)
+                        : const Color(0xFFBDBDBD),
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
@@ -5055,11 +5073,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      _buildCreditLink(
-                        '音読さん',
-                        'https://ondoku3.com/',
-                        isDark,
-                      ),
+                      _buildCreditLink('音読さん', 'https://ondoku3.com/', isDark),
                       _buildCreditLink(
                         'On-Jin ~音人~',
                         'https://on-jin.com/',
@@ -5109,9 +5123,13 @@ class _SettingsPageState extends State<SettingsPage> {
       valueListenable: themeNotifier,
       builder: (context, isDark, _) {
         return Scaffold(
-          backgroundColor: isDark ? const Color(0xFF0E131A) : const Color(0xFFF0F0F0),
+          backgroundColor: isDark
+              ? const Color(0xFF0E131A)
+              : const Color(0xFFF0F0F0),
           appBar: AppBar(
-            backgroundColor: isDark ? const Color(0xFF0E131A) : const Color(0xFFF0F0F0),
+            backgroundColor: isDark
+                ? const Color(0xFF0E131A)
+                : const Color(0xFFF0F0F0),
             elevation: 0,
             leading: IconButton(
               icon: Icon(
@@ -5140,13 +5158,18 @@ class _SettingsPageState extends State<SettingsPage> {
                     onTap: widget.openTimeLogsPage,
                     borderRadius: BorderRadius.circular(16),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 16,
+                        horizontal: 20,
+                      ),
                       decoration: BoxDecoration(
                         color: isDark ? const Color(0xFF141B26) : Colors.white,
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                            color: isDark
+                                ? const Color(0xFF2A3543)
+                                : const Color(0xFFE0E0E0),
                             spreadRadius: 1,
                             blurRadius: 0,
                           ),
@@ -5157,14 +5180,21 @@ class _SettingsPageState extends State<SettingsPage> {
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.history, color: PhaseColors.finish, size: 28),
+                              Icon(
+                                Icons.history,
+                                color: PhaseColors.finish,
+                                size: 28,
+                              ),
                               const SizedBox(width: 14),
                               Text(
                                 '計測ログ',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
                               ),
                             ],
                           ),
@@ -5180,13 +5210,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 12),
                 // Theme setting
                 Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 16,
+                    horizontal: 20,
+                  ),
                   decoration: BoxDecoration(
                     color: isDark ? const Color(0xFF141B26) : Colors.white,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                        color: isDark
+                            ? const Color(0xFF2A3543)
+                            : const Color(0xFFE0E0E0),
                         spreadRadius: 1,
                         blurRadius: 0,
                       ),
@@ -5205,10 +5240,11 @@ class _SettingsPageState extends State<SettingsPage> {
                           const SizedBox(width: 14),
                           Text(
                             'ダークモード',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: isDark ? Colors.white : Colors.black87,
-                            ),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
                           ),
                         ],
                       ),
@@ -5221,7 +5257,8 @@ class _SettingsPageState extends State<SettingsPage> {
                             value: isDark,
                             onChanged: (value) async {
                               themeNotifier.value = value;
-                              final prefs = await SharedPreferences.getInstance();
+                              final prefs =
+                                  await SharedPreferences.getInstance();
                               prefs.setBool('dark_mode', value);
                             },
                           ),
@@ -5233,15 +5270,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 12),
                 // Time measurement setting
                 Container(
-                  padding: EdgeInsets.symmetric(vertical: 16, horizontal: 20).copyWith(
-                    bottom: _timeMeasurementEnabled ? 20 : 16,
-                  ),
+                  padding: EdgeInsets.symmetric(
+                    vertical: 16,
+                    horizontal: 20,
+                  ).copyWith(bottom: _timeMeasurementEnabled ? 20 : 16),
                   decoration: BoxDecoration(
                     color: isDark ? const Color(0xFF141B26) : Colors.white,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                        color: isDark
+                            ? const Color(0xFF2A3543)
+                            : const Color(0xFFE0E0E0),
                         spreadRadius: 1,
                         blurRadius: 0,
                       ),
@@ -5255,14 +5295,21 @@ class _SettingsPageState extends State<SettingsPage> {
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.timer, color: Color(0xFF6BCB1F), size: 28),
+                              const Icon(
+                                Icons.timer,
+                                color: Color(0xFF6BCB1F),
+                                size: 28,
+                              ),
                               const SizedBox(width: 14),
                               Text(
                                 'タイム計測',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
                               ),
                             ],
                           ),
@@ -5291,13 +5338,19 @@ class _SettingsPageState extends State<SettingsPage> {
                       if (_timeMeasurementEnabled) ...[
                         const SizedBox(height: 16),
                         Divider(
-                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          color: isDark
+                              ? const Color(0xFF2A3543)
+                              : const Color(0xFFE0E0E0),
                           height: 1,
                         ),
                         const SizedBox(height: 16),
                         Row(
                           children: [
-                            const Icon(Icons.save_alt, color: Color(0xFF00BCD4), size: 20),
+                            const Icon(
+                              Icons.save_alt,
+                              color: Color(0xFF00BCD4),
+                              size: 20,
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
@@ -5338,9 +5391,19 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                             ),
                             const Spacer(),
-                            _buildTriggerChip('tap', 'タップ', Icons.touch_app, isDark),
+                            _buildTriggerChip(
+                              'tap',
+                              'タップ',
+                              Icons.touch_app,
+                              isDark,
+                            ),
                             const SizedBox(width: 8),
-                            _buildTriggerChip('hardware_button', 'ボタン', Icons.smart_button, isDark),
+                            _buildTriggerChip(
+                              'hardware_button',
+                              'ボタン',
+                              Icons.smart_button,
+                              isDark,
+                            ),
                           ],
                         ),
                         if (_triggerMethod == 'tap') ...[
@@ -5348,17 +5411,30 @@ class _SettingsPageState extends State<SettingsPage> {
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5),
+                              color: isDark
+                                  ? const Color(0xFF1A2332)
+                                  : const Color(0xFFF5F5F5),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.info_outline, size: 16, color: isDark ? Colors.white54 : Colors.black45),
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 16,
+                                  color: isDark
+                                      ? Colors.white54
+                                      : Colors.black45,
+                                ),
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
                                     '計測中に画面をタップすると計測が停止します',
-                                    style: TextStyle(fontSize: 12, color: isDark ? Colors.white70 : Colors.black54),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isDark
+                                          ? Colors.white70
+                                          : Colors.black54,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -5370,17 +5446,30 @@ class _SettingsPageState extends State<SettingsPage> {
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5),
+                              color: isDark
+                                  ? const Color(0xFF1A2332)
+                                  : const Color(0xFFF5F5F5),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.info_outline, size: 16, color: isDark ? Colors.white54 : Colors.black45),
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 16,
+                                  color: isDark
+                                      ? Colors.white54
+                                      : Colors.black45,
+                                ),
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
                                     '計測中にイヤホンボタン、Bluetoothリモコン、または音量ボタンを押すと計測が停止します',
-                                    style: TextStyle(fontSize: 12, color: isDark ? Colors.white70 : Colors.black54),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isDark
+                                          ? Colors.white70
+                                          : Colors.black54,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -5410,9 +5499,13 @@ class _SettingsPageState extends State<SettingsPage> {
                                 child: SliderTheme(
                                   data: SliderTheme.of(context).copyWith(
                                     activeTrackColor: const Color(0xFF00BCD4),
-                                    inactiveTrackColor: isDark ? const Color(0xFF1A2332) : const Color(0xFFE0E0E0),
+                                    inactiveTrackColor: isDark
+                                        ? const Color(0xFF1A2332)
+                                        : const Color(0xFFE0E0E0),
                                     thumbColor: const Color(0xFF00BCD4),
-                                    overlayColor: const Color(0xFF00BCD4).withOpacity(0.2),
+                                    overlayColor: const Color(
+                                      0xFF00BCD4,
+                                    ).withOpacity(0.2),
                                   ),
                                   child: Slider(
                                     value: _lagCompensation,
@@ -5422,8 +5515,10 @@ class _SettingsPageState extends State<SettingsPage> {
                                     onChanged: (value) {
                                       setState(() => _lagCompensation = value);
                                       widget.onLagCompensationChanged(value);
-                                      if (_lagFocusNode.hasFocus) _lagFocusNode.unfocus();
-                                      _lagController.text = value.toStringAsFixed(2);
+                                      if (_lagFocusNode.hasFocus)
+                                        _lagFocusNode.unfocus();
+                                      _lagController.text = value
+                                          .toStringAsFixed(2);
                                     },
                                   ),
                                 ),
@@ -5434,42 +5529,63 @@ class _SettingsPageState extends State<SettingsPage> {
                                 child: TextField(
                                   controller: _lagController,
                                   focusNode: _lagFocusNode,
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
-                                    color: isDark ? Colors.white : Colors.black87,
+                                    color: isDark
+                                        ? Colors.white
+                                        : Colors.black87,
                                   ),
                                   decoration: InputDecoration(
                                     isDense: true,
-                                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                      horizontal: 8,
+                                    ),
                                     suffixText: '秒',
                                     suffixStyle: TextStyle(
                                       fontSize: 12,
-                                      color: isDark ? Colors.white54 : Colors.black45,
+                                      color: isDark
+                                          ? Colors.white54
+                                          : Colors.black45,
                                     ),
                                     filled: true,
-                                    fillColor: isDark ? const Color(0xFF1A2332) : const Color(0xFFF0F0F0),
+                                    fillColor: isDark
+                                        ? const Color(0xFF1A2332)
+                                        : const Color(0xFFF0F0F0),
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(8),
                                       borderSide: BorderSide(
-                                        color: isDark ? const Color(0xFF2A3543) : const Color(0xFFD0D0D0),
+                                        color: isDark
+                                            ? const Color(0xFF2A3543)
+                                            : const Color(0xFFD0D0D0),
                                       ),
                                     ),
                                     enabledBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(8),
                                       borderSide: BorderSide(
-                                        color: isDark ? const Color(0xFF2A3543) : const Color(0xFFD0D0D0),
+                                        color: isDark
+                                            ? const Color(0xFF2A3543)
+                                            : const Color(0xFFD0D0D0),
                                       ),
                                     ),
                                     focusedBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(8),
-                                      borderSide: const BorderSide(color: Color(0xFF00BCD4), width: 2),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFF00BCD4),
+                                        width: 2,
+                                      ),
                                     ),
                                   ),
                                   inputFormatters: [
-                                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'^\d*\.?\d{0,2}'),
+                                    ),
                                   ],
                                   onSubmitted: (value) {
                                     final trimmed = value.trim();
@@ -5478,11 +5594,14 @@ class _SettingsPageState extends State<SettingsPage> {
                                       newValue = _lagCompensation;
                                     } else {
                                       final parsed = double.tryParse(trimmed);
-                                      newValue = parsed != null ? parsed.clamp(0.0, 1.0) : _lagCompensation;
+                                      newValue = parsed != null
+                                          ? parsed.clamp(0.0, 1.0)
+                                          : _lagCompensation;
                                     }
                                     setState(() => _lagCompensation = newValue);
                                     widget.onLagCompensationChanged(newValue);
-                                    _lagController.text = newValue.toStringAsFixed(2);
+                                    _lagController.text = newValue
+                                        .toStringAsFixed(2);
                                   },
                                 ),
                               ),
@@ -5495,16 +5614,27 @@ class _SettingsPageState extends State<SettingsPage> {
                               decoration: BoxDecoration(
                                 color: const Color(0xFF00BCD4).withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFF00BCD4).withOpacity(0.3)),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFF00BCD4,
+                                  ).withOpacity(0.3),
+                                ),
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.timer, size: 16, color: Color(0xFF00BCD4)),
+                                  const Icon(
+                                    Icons.timer,
+                                    size: 16,
+                                    color: Color(0xFF00BCD4),
+                                  ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       '計測終了時、タイムから${_lagCompensation.toStringAsFixed(2)}秒を差し引きます',
-                                      style: const TextStyle(fontSize: 12, color: Color(0xFF00BCD4)),
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF00BCD4),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -5521,13 +5651,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 Opacity(
                   opacity: _timeMeasurementEnabled ? 0.5 : 1.0,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 16,
+                      horizontal: 20,
+                    ),
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF141B26) : Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          color: isDark
+                              ? const Color(0xFF2A3543)
+                              : const Color(0xFFE0E0E0),
                           spreadRadius: 1,
                           blurRadius: 0,
                         ),
@@ -5538,14 +5673,21 @@ class _SettingsPageState extends State<SettingsPage> {
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.repeat, color: Color(0xFF6BCB1F), size: 28),
+                            const Icon(
+                              Icons.repeat,
+                              color: Color(0xFF6BCB1F),
+                              size: 28,
+                            ),
                             const SizedBox(width: 14),
                             Text(
                               'ループ',
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark
+                                        ? Colors.white
+                                        : Colors.black87,
+                                  ),
                             ),
                           ],
                         ),
@@ -5572,17 +5714,26 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 16),
                 // Audio settings (collapsible)
                 GestureDetector(
-                  onTap: () => setState(() => _audioSettingsExpanded = !_audioSettingsExpanded),
+                  onTap: () => setState(
+                    () => _audioSettingsExpanded = !_audioSettingsExpanded,
+                  ),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 16,
+                      horizontal: 20,
+                    ),
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF141B26) : Colors.white,
                       borderRadius: _audioSettingsExpanded
-                          ? const BorderRadius.vertical(top: Radius.circular(16))
+                          ? const BorderRadius.vertical(
+                              top: Radius.circular(16),
+                            )
                           : BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          color: isDark
+                              ? const Color(0xFF2A3543)
+                              : const Color(0xFFE0E0E0),
                           spreadRadius: 1,
                           blurRadius: 0,
                         ),
@@ -5593,19 +5744,28 @@ class _SettingsPageState extends State<SettingsPage> {
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.volume_up, color: Color(0xFF6BCB1F), size: 28),
+                            const Icon(
+                              Icons.volume_up,
+                              color: Color(0xFF6BCB1F),
+                              size: 28,
+                            ),
                             const SizedBox(width: 14),
                             Text(
                               '音声設定',
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark
+                                        ? Colors.white
+                                        : Colors.black87,
+                                  ),
                             ),
                           ],
                         ),
                         Icon(
-                          _audioSettingsExpanded ? Icons.expand_less : Icons.expand_more,
+                          _audioSettingsExpanded
+                              ? Icons.expand_less
+                              : Icons.expand_more,
                           color: isDark ? Colors.white54 : Colors.black45,
                         ),
                       ],
@@ -5617,10 +5777,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF141B26) : Colors.white,
-                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(16),
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          color: isDark
+                              ? const Color(0xFF2A3543)
+                              : const Color(0xFFE0E0E0),
                           spreadRadius: 1,
                           blurRadius: 0,
                         ),
@@ -5654,7 +5818,8 @@ class _SettingsPageState extends State<SettingsPage> {
                             widget.onOnAudioChanged(path);
                           },
                           onPreviewAudio: () {
-                            if (_onAudioPath.isNotEmpty) widget.player.play(AssetSource(_onAudioPath));
+                            if (_onAudioPath.isNotEmpty)
+                              widget.player.play(AssetSource(_onAudioPath));
                           },
                         ),
                         const SizedBox(height: 12),
@@ -5683,7 +5848,8 @@ class _SettingsPageState extends State<SettingsPage> {
                             widget.onSetAudioChanged(path);
                           },
                           onPreviewAudio: () {
-                            if (_setAudioPath.isNotEmpty) widget.player.play(AssetSource(_setAudioPath));
+                            if (_setAudioPath.isNotEmpty)
+                              widget.player.play(AssetSource(_setAudioPath));
                           },
                         ),
                         const SizedBox(height: 12),
@@ -5712,7 +5878,8 @@ class _SettingsPageState extends State<SettingsPage> {
                             widget.onGoAudioChanged(path);
                           },
                           onPreviewAudio: () {
-                            if (_goAudioPath.isNotEmpty) widget.player.play(AssetSource(_goAudioPath));
+                            if (_goAudioPath.isNotEmpty)
+                              widget.player.play(AssetSource(_goAudioPath));
                           },
                         ),
                       ],
@@ -5724,13 +5891,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 GestureDetector(
                   onTap: () => _showCreditsDialog(context),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 18,
+                      horizontal: 20,
+                    ),
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF141B26) : Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          color: isDark
+                              ? const Color(0xFF2A3543)
+                              : const Color(0xFFE0E0E0),
                           spreadRadius: 1,
                           blurRadius: 0,
                         ),
@@ -5749,9 +5921,12 @@ class _SettingsPageState extends State<SettingsPage> {
                             const SizedBox(width: 14),
                             Text(
                               'クレジット',
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    color: isDark
+                                        ? Colors.white
+                                        : Colors.black87,
+                                  ),
                             ),
                           ],
                         ),
@@ -5790,13 +5965,20 @@ class _SettingsPageState extends State<SettingsPage> {
                     }
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 16,
+                      horizontal: 20,
+                    ),
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF141B26) : Colors.white,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          color: isDark
+                              ? const Color(0xFF2A3543)
+                              : const Color(0xFFE0E0E0),
                           spreadRadius: 1,
                           blurRadius: 0,
                         ),
@@ -5804,7 +5986,11 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.add_circle_outline, color: Colors.orange, size: 24),
+                        const Icon(
+                          Icons.add_circle_outline,
+                          color: Colors.orange,
+                          size: 24,
+                        ),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Text(
@@ -5833,13 +6019,20 @@ class _SettingsPageState extends State<SettingsPage> {
                     }
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 16,
+                      horizontal: 20,
+                    ),
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF141B26) : Colors.white,
-                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(16),
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          color: isDark
+                              ? const Color(0xFF2A3543)
+                              : const Color(0xFFE0E0E0),
                           spreadRadius: 1,
                           blurRadius: 0,
                         ),
@@ -5847,7 +6040,11 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.delete_outline, color: Colors.red, size: 24),
+                        const Icon(
+                          Icons.delete_outline,
+                          color: Colors.red,
+                          size: 24,
+                        ),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Text(
