@@ -1290,1073 +1290,146 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     setState(() {
       _isSettingsOpen = true;
     });
-    // Create controller outside of builder to prevent recreation on rebuild
-    final lagController = TextEditingController(
-      text: _lagCompensation.toStringAsFixed(2),
-    );
-    final lagFocusNode = FocusNode();
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      useRootNavigator: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, modalSetState) {
-            void sync(VoidCallback fn) {
-              setState(fn);
-              modalSetState(() {});
-            }
-
-            final maxHeight = MediaQuery.of(context).size.height * 0.85;
-
-            final isDark = themeNotifier.value;
-            return Container(
-              constraints: BoxConstraints(maxHeight: maxHeight),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFF0E131A)
-                    : const Color(0xFFF0F0F0),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Fixed drag handle at top
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12, bottom: 8),
-                    child: Center(
-                      child: Container(
-                        width: 48,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? const Color(0xFF3A4654)
-                              : const Color(0xFFBDBDBD),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Scrollable content
-                  Flexible(
-                    child: SingleChildScrollView(
-                      padding: EdgeInsets.only(
-                        left: 20,
-                        right: 20,
-                        bottom: 24 + MediaQuery.of(context).viewInsets.bottom,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '設定',
-                            style: Theme.of(context).textTheme.headlineSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
-                          ),
-                          const SizedBox(height: 16),
-                          // Time logs button
-                          Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () {
-                                _openTimeLogsPage();
-                              },
-                              borderRadius: BorderRadius.circular(16),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                  horizontal: 20,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? const Color(0xFF141B26)
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: isDark
-                                          ? const Color(0xFF2A3543)
-                                          : const Color(0xFFE0E0E0),
-                                      spreadRadius: 1,
-                                      blurRadius: 0,
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.history,
-                                          color: PhaseColors.finish,
-                                          size: 28,
-                                        ),
-                                        const SizedBox(width: 14),
-                                        Text(
-                                          '計測ログ',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleMedium
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w600,
-                                                color: isDark
-                                                    ? Colors.white
-                                                    : Colors.black87,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                    Icon(
-                                      Icons.chevron_right,
-                                      color: isDark
-                                          ? Colors.white54
-                                          : Colors.black45,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          // Theme setting
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 16,
-                              horizontal: 20,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF141B26)
-                                  : Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: isDark
-                                      ? const Color(0xFF2A3543)
-                                      : const Color(0xFFE0E0E0),
-                                  spreadRadius: 1,
-                                  blurRadius: 0,
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      isDark
-                                          ? Icons.dark_mode
-                                          : Icons.light_mode,
-                                      color: const Color(0xFF6BCB1F),
-                                      size: 28,
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Text(
-                                      'ダークモード',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w600,
-                                            color: isDark
-                                                ? Colors.white
-                                                : Colors.black87,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                                SizedBox(
-                                  height: 32,
-                                  width: 52,
-                                  child: FittedBox(
-                                    fit: BoxFit.contain,
-                                    child: Switch(
-                                      value: isDark,
-                                      onChanged: (value) async {
-                                        themeNotifier.value = value;
-                                        final prefs =
-                                            await SharedPreferences.getInstance();
-                                        prefs.setBool('dark_mode', value);
-                                        modalSetState(() {});
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          // Time measurement setting
-                          Container(
-                            padding:
-                                EdgeInsets.symmetric(
-                                  vertical: 16,
-                                  horizontal: 20,
-                                ).copyWith(
-                                  bottom: _timeMeasurementEnabled ? 20 : 16,
-                                ),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF141B26)
-                                  : Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: isDark
-                                      ? const Color(0xFF2A3543)
-                                      : const Color(0xFFE0E0E0),
-                                  spreadRadius: 1,
-                                  blurRadius: 0,
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Header row with switch
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.timer,
-                                          color: Color(0xFF6BCB1F),
-                                          size: 28,
-                                        ),
-                                        const SizedBox(width: 14),
-                                        Text(
-                                          'タイム計測',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleMedium
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w600,
-                                                color: isDark
-                                                    ? Colors.white
-                                                    : Colors.black87,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                    SizedBox(
-                                      height: 32,
-                                      width: 52,
-                                      child: FittedBox(
-                                        fit: BoxFit.contain,
-                                        child: Switch(
-                                          value: _timeMeasurementEnabled,
-                                          onChanged: (value) {
-                                            sync(() {
-                                              _timeMeasurementEnabled = value;
-                                              _saveBool(
-                                                'time_measurement_enabled',
-                                                value,
-                                              );
-                                              // Disable loop when time measurement is enabled
-                                              if (value && _loopEnabled) {
-                                                _loopEnabled = false;
-                                                _saveBool(
-                                                  'loop_enabled',
-                                                  false,
-                                                );
-                                              }
-                                            });
-                                          },
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                // Expanded settings when enabled
-                                if (_timeMeasurementEnabled) ...[
-                                  const SizedBox(height: 16),
-                                  Divider(
-                                    color: isDark
-                                        ? const Color(0xFF2A3543)
-                                        : const Color(0xFFE0E0E0),
-                                    height: 1,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  // Auto-save row
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.save_alt,
-                                        color: Color(0xFF00BCD4),
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          'オートセーブ',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w500,
-                                            color: isDark
-                                                ? Colors.white
-                                                : Colors.black87,
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        height: 28,
-                                        width: 48,
-                                        child: FittedBox(
-                                          fit: BoxFit.contain,
-                                          child: Switch(
-                                            value: _autoSaveEnabled,
-                                            activeColor: const Color(
-                                              0xFF00BCD4,
-                                            ),
-                                            onChanged: (value) {
-                                              sync(() {
-                                                _autoSaveEnabled = value;
-                                                _saveBool(
-                                                  'auto_save_enabled',
-                                                  value,
-                                                );
-                                              });
-                                            },
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  // Trigger selection - same line layout
-                                  Row(
-                                    children: [
-                                      Text(
-                                        'トリガー',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                          color: isDark
-                                              ? Colors.white70
-                                              : Colors.black54,
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      _buildTriggerChip(
-                                        'tap',
-                                        'タップ',
-                                        Icons.touch_app,
-                                        isDark,
-                                        sync,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      _buildTriggerChip(
-                                        'hardware_button',
-                                        'ボタン',
-                                        Icons.smart_button,
-                                        isDark,
-                                        sync,
-                                      ),
-                                    ],
-                                  ),
-                                  // Tap info (show when trigger is tap)
-                                  if (_triggerMethod == 'tap') ...[
-                                    const SizedBox(height: 12),
-                                    Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: isDark
-                                            ? const Color(0xFF1A2332)
-                                            : const Color(0xFFF5F5F5),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.info_outline,
-                                            size: 16,
-                                            color: isDark
-                                                ? Colors.white54
-                                                : Colors.black45,
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: Text(
-                                              '計測中に画面をタップすると計測が停止します',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: isDark
-                                                    ? Colors.white70
-                                                    : Colors.black54,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                  // Hardware button info (show when trigger is hardware_button)
-                                  if (_triggerMethod == 'hardware_button') ...[
-                                    const SizedBox(height: 12),
-                                    Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: isDark
-                                            ? const Color(0xFF1A2332)
-                                            : const Color(0xFFF5F5F5),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.info_outline,
-                                            size: 16,
-                                            color: isDark
-                                                ? Colors.white54
-                                                : Colors.black45,
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: Text(
-                                              '計測中にイヤホンボタン、Bluetoothリモコン、または音量ボタンを押すと計測が停止します',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: isDark
-                                                    ? Colors.white70
-                                                    : Colors.black54,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                  // Lag compensation setting (only show for hardware button trigger)
-                                  if (_triggerMethod == 'hardware_button') ...[
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      'ラグを考慮',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        color: isDark
-                                            ? Colors.white70
-                                            : Colors.black54,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'トリガーの遅延を補正します（0〜1秒）',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: isDark
-                                            ? Colors.white54
-                                            : Colors.black45,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: SliderTheme(
-                                            data: SliderTheme.of(context)
-                                                .copyWith(
-                                                  activeTrackColor: const Color(
-                                                    0xFF00BCD4,
-                                                  ),
-                                                  inactiveTrackColor: isDark
-                                                      ? const Color(0xFF1A2332)
-                                                      : const Color(0xFFE0E0E0),
-                                                  thumbColor: const Color(
-                                                    0xFF00BCD4,
-                                                  ),
-                                                  overlayColor: const Color(
-                                                    0xFF00BCD4,
-                                                  ).withOpacity(0.2),
-                                                ),
-                                            child: Slider(
-                                              value: _lagCompensation,
-                                              min: 0.0,
-                                              max: 1.0,
-                                              divisions: 100,
-                                              onChanged: (value) {
-                                                sync(() {
-                                                  _lagCompensation = value;
-                                                  _saveDouble(
-                                                    'lag_compensation',
-                                                    value,
-                                                  );
-                                                });
-                                                // Unfocus text field when slider is moved
-                                                if (lagFocusNode.hasFocus) {
-                                                  lagFocusNode.unfocus();
-                                                }
-                                                lagController.text = value
-                                                    .toStringAsFixed(2);
-                                              },
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        SizedBox(
-                                          width: 70,
-                                          child: TextField(
-                                            controller: lagController,
-                                            focusNode: lagFocusNode,
-                                            keyboardType:
-                                                const TextInputType.numberWithOptions(
-                                                  decimal: true,
-                                                ),
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: isDark
-                                                  ? Colors.white
-                                                  : Colors.black87,
-                                            ),
-                                            decoration: InputDecoration(
-                                              isDense: true,
-                                              contentPadding:
-                                                  const EdgeInsets.symmetric(
-                                                    vertical: 10,
-                                                    horizontal: 8,
-                                                  ),
-                                              suffixText: '秒',
-                                              suffixStyle: TextStyle(
-                                                fontSize: 12,
-                                                color: isDark
-                                                    ? Colors.white54
-                                                    : Colors.black45,
-                                              ),
-                                              filled: true,
-                                              fillColor: isDark
-                                                  ? const Color(0xFF1A2332)
-                                                  : const Color(0xFFF0F0F0),
-                                              border: OutlineInputBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                borderSide: BorderSide(
-                                                  color: isDark
-                                                      ? const Color(0xFF2A3543)
-                                                      : const Color(0xFFD0D0D0),
-                                                ),
-                                              ),
-                                              enabledBorder: OutlineInputBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                borderSide: BorderSide(
-                                                  color: isDark
-                                                      ? const Color(0xFF2A3543)
-                                                      : const Color(0xFFD0D0D0),
-                                                ),
-                                              ),
-                                              focusedBorder: OutlineInputBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                borderSide: const BorderSide(
-                                                  color: Color(0xFF00BCD4),
-                                                  width: 2,
-                                                ),
-                                              ),
-                                            ),
-                                            inputFormatters: [
-                                              FilteringTextInputFormatter.allow(
-                                                RegExp(r'^\d*\.?\d{0,2}'),
-                                              ),
-                                            ],
-                                            onSubmitted: (value) {
-                                              final trimmed = value.trim();
-                                              double newValue;
-                                              if (trimmed.isEmpty) {
-                                                // Empty input: use current slider value
-                                                newValue = _lagCompensation;
-                                              } else {
-                                                final parsed = double.tryParse(
-                                                  trimmed,
-                                                );
-                                                if (parsed != null) {
-                                                  newValue = parsed.clamp(
-                                                    0.0,
-                                                    1.0,
-                                                  );
-                                                } else {
-                                                  // Invalid input: use current value
-                                                  newValue = _lagCompensation;
-                                                }
-                                              }
-                                              sync(() {
-                                                _lagCompensation = newValue;
-                                                _saveDouble(
-                                                  'lag_compensation',
-                                                  newValue,
-                                                );
-                                              });
-                                              lagController.text = newValue
-                                                  .toStringAsFixed(2);
-                                            },
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    if (_lagCompensation > 0) ...[
-                                      const SizedBox(height: 12),
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: const Color(
-                                            0xFF00BCD4,
-                                          ).withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          border: Border.all(
-                                            color: const Color(
-                                              0xFF00BCD4,
-                                            ).withOpacity(0.3),
-                                          ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.timer,
-                                              size: 16,
-                                              color: Color(0xFF00BCD4),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                '計測終了時、タイムから${_lagCompensation.toStringAsFixed(2)}秒を差し引きます',
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: Color(0xFF00BCD4),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ], // End of if (_triggerMethod == 'hardware_button')
-                                ],
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          // Loop setting
-                          Opacity(
-                            opacity: _timeMeasurementEnabled ? 0.5 : 1.0,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 16,
-                                horizontal: 20,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? const Color(0xFF141B26)
-                                    : Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: isDark
-                                        ? const Color(0xFF2A3543)
-                                        : const Color(0xFFE0E0E0),
-                                    spreadRadius: 1,
-                                    blurRadius: 0,
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.repeat,
-                                        color: Color(0xFF6BCB1F),
-                                        size: 28,
-                                      ),
-                                      const SizedBox(width: 14),
-                                      Text(
-                                        'ループ',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w600,
-                                              color: isDark
-                                                  ? Colors.white
-                                                  : Colors.black87,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                  SizedBox(
-                                    height: 32,
-                                    width: 52,
-                                    child: FittedBox(
-                                      fit: BoxFit.contain,
-                                      child: Switch(
-                                        value: _loopEnabled,
-                                        onChanged: _timeMeasurementEnabled
-                                            ? null
-                                            : (value) {
-                                                sync(() {
-                                                  _loopEnabled = value;
-                                                  _saveBool(
-                                                    'loop_enabled',
-                                                    value,
-                                                  );
-                                                });
-                                              },
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          _buildPhaseSetting(
-                            title: 'On Your Marks',
-                            randomEnabled: _randomOn,
-                            onRandomChanged: (value) {
-                              sync(() {
-                                _randomOn = value;
-                                _saveBool('on_random', value);
-                              });
-                            },
-                            fixedValue: _onFixed,
-                            rangeValues: _onRange,
-                            onFixedChanged: (value) {
-                              sync(() {
-                                _onFixed = value;
-                                _saveDouble('on_fixed', value);
-                              });
-                            },
-                            onRangeChanged: (values) {
-                              sync(() {
-                                _onRange = values;
-                                _saveDouble('on_min', values.start);
-                                _saveDouble('on_max', values.end);
-                              });
-                            },
-                            maxSeconds: 30,
-                            audioOptions: AudioOptions.onYourMarks,
-                            selectedAudioPath: _onAudioPath,
-                            onAudioChanged: (path) {
-                              sync(() {
-                                _onAudioPath = path;
-                                _saveString('on_audio_path', path);
-                              });
-                            },
-                            onPreviewAudio: () {
-                              if (_onAudioPath.isNotEmpty) {
-                                _player.play(AssetSource(_onAudioPath));
-                              }
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          _buildPhaseSetting(
-                            title: 'Set',
-                            randomEnabled: _randomSet,
-                            onRandomChanged: (value) {
-                              sync(() {
-                                _randomSet = value;
-                                _saveBool('set_random', value);
-                              });
-                            },
-                            fixedValue: _setFixed,
-                            rangeValues: _setRange,
-                            onFixedChanged: (value) {
-                              sync(() {
-                                _setFixed = value;
-                                _saveDouble('set_fixed', value);
-                              });
-                            },
-                            onRangeChanged: (values) {
-                              sync(() {
-                                _setRange = values;
-                                _saveDouble('set_min', values.start);
-                                _saveDouble('set_max', values.end);
-                              });
-                            },
-                            maxSeconds: 40,
-                            audioOptions: AudioOptions.set,
-                            selectedAudioPath: _setAudioPath,
-                            onAudioChanged: (path) {
-                              sync(() {
-                                _setAudioPath = path;
-                                _saveString('set_audio_path', path);
-                              });
-                            },
-                            onPreviewAudio: () {
-                              if (_setAudioPath.isNotEmpty) {
-                                _player.play(AssetSource(_setAudioPath));
-                              }
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          _buildPhaseSetting(
-                            title: 'Go',
-                            randomEnabled: _randomPan,
-                            onRandomChanged: (value) {
-                              sync(() {
-                                _randomPan = value;
-                                _saveBool('pan_random', value);
-                              });
-                            },
-                            fixedValue: _panFixed,
-                            rangeValues: _panRange,
-                            onFixedChanged: (value) {
-                              sync(() {
-                                _panFixed = value;
-                                _saveDouble('pan_fixed', value);
-                              });
-                            },
-                            onRangeChanged: (values) {
-                              sync(() {
-                                _panRange = values;
-                                _saveDouble('pan_min', values.start);
-                                _saveDouble('pan_max', values.end);
-                              });
-                            },
-                            maxSeconds: 10,
-                            audioOptions: AudioOptions.go,
-                            selectedAudioPath: _goAudioPath,
-                            onAudioChanged: (path) {
-                              sync(() {
-                                _goAudioPath = path;
-                                _saveString('go_audio_path', path);
-                              });
-                            },
-                            onPreviewAudio: () {
-                              if (_goAudioPath.isNotEmpty) {
-                                _player.play(AssetSource(_goAudioPath));
-                              }
-                            },
-                          ),
-                          const SizedBox(height: 24),
-                          // Credit button
-                          GestureDetector(
-                            onTap: () => _showCredits(context),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 18,
-                                horizontal: 20,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? const Color(0xFF141B26)
-                                    : Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: isDark
-                                        ? const Color(0xFF2A3543)
-                                        : const Color(0xFFE0E0E0),
-                                    spreadRadius: 1,
-                                    blurRadius: 0,
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Flexible(
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.info_outline,
-                                          color: isDark
-                                              ? Colors.white70
-                                              : Colors.black54,
-                                          size: 26,
-                                        ),
-                                        const SizedBox(width: 14),
-                                        Flexible(
-                                          child: Text(
-                                            'クレジット',
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .titleMedium
-                                                ?.copyWith(
-                                                  color: isDark
-                                                      ? Colors.white
-                                                      : Colors.black87,
-                                                ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Icon(
-                                    Icons.chevron_right,
-                                    color: isDark
-                                        ? Colors.white70
-                                        : Colors.black54,
-                                    size: 28,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          // Debug section header
-                          Padding(
-                            padding: const EdgeInsets.only(left: 4, bottom: 8),
-                            child: Text(
-                              'デバッグ',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? Colors.white54 : Colors.black45,
-                              ),
-                            ),
-                          ),
-                          // Add test data button
-                          GestureDetector(
-                            onTap: () async {
-                              await _addTestRecords();
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('50個のテスト用記録を追加しました'),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 16,
-                                horizontal: 20,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? const Color(0xFF141B26)
-                                    : Colors.white,
-                                borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(16),
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: isDark
-                                        ? const Color(0xFF2A3543)
-                                        : const Color(0xFFE0E0E0),
-                                    spreadRadius: 1,
-                                    blurRadius: 0,
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.add_circle_outline,
-                                    color: Colors.orange,
-                                    size: 24,
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Text(
-                                      'テスト用の記録を追加（50件）',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w500,
-                                        color: isDark
-                                            ? Colors.white
-                                            : Colors.black87,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          // Delete test data button
-                          GestureDetector(
-                            onTap: () async {
-                              await _deleteTestRecords();
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('テスト用の記録を削除しました'),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 16,
-                                horizontal: 20,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? const Color(0xFF141B26)
-                                    : Colors.white,
-                                borderRadius: const BorderRadius.vertical(
-                                  bottom: Radius.circular(16),
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: isDark
-                                        ? const Color(0xFF2A3543)
-                                        : const Color(0xFFE0E0E0),
-                                    spreadRadius: 1,
-                                    blurRadius: 0,
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.delete_outline,
-                                    color: Colors.red,
-                                    size: 24,
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Text(
-                                      'テスト用の記録を消す',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w500,
-                                        color: isDark
-                                            ? Colors.white
-                                            : Colors.black87,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
+    
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SettingsPage(
+          timeMeasurementEnabled: _timeMeasurementEnabled,
+          autoSaveEnabled: _autoSaveEnabled,
+          triggerMethod: _triggerMethod,
+          lagCompensation: _lagCompensation,
+          loopEnabled: _loopEnabled,
+          randomOn: _randomOn,
+          randomSet: _randomSet,
+          randomPan: _randomPan,
+          onFixed: _onFixed,
+          setFixed: _setFixed,
+          panFixed: _panFixed,
+          onRange: _onRange,
+          setRange: _setRange,
+          panRange: _panRange,
+          onAudioPath: _onAudioPath,
+          setAudioPath: _setAudioPath,
+          goAudioPath: _goAudioPath,
+          isRunning: _isRunning,
+          player: _player,
+          onTimeMeasurementChanged: (value) {
+            setState(() {
+              _timeMeasurementEnabled = value;
+              _saveBool('time_measurement_enabled', value);
+              if (value && _loopEnabled) {
+                _loopEnabled = false;
+                _saveBool('loop_enabled', false);
+              }
+            });
           },
-        );
-      },
+          onAutoSaveChanged: (value) {
+            setState(() {
+              _autoSaveEnabled = value;
+              _saveBool('auto_save_enabled', value);
+            });
+          },
+          onTriggerMethodChanged: (value) {
+            setState(() {
+              _triggerMethod = value;
+              _saveString('trigger_method', value);
+            });
+          },
+          onLagCompensationChanged: (value) {
+            setState(() {
+              _lagCompensation = value;
+              _saveDouble('lag_compensation', value);
+            });
+          },
+          onLoopChanged: (value) {
+            setState(() {
+              _loopEnabled = value;
+              _saveBool('loop_enabled', value);
+            });
+          },
+          onRandomOnChanged: (value) {
+            setState(() {
+              _randomOn = value;
+              _saveBool('on_random', value);
+            });
+          },
+          onRandomSetChanged: (value) {
+            setState(() {
+              _randomSet = value;
+              _saveBool('set_random', value);
+            });
+          },
+          onRandomPanChanged: (value) {
+            setState(() {
+              _randomPan = value;
+              _saveBool('pan_random', value);
+            });
+          },
+          onOnFixedChanged: (value) {
+            setState(() {
+              _onFixed = value;
+              _saveDouble('on_fixed', value);
+            });
+          },
+          onSetFixedChanged: (value) {
+            setState(() {
+              _setFixed = value;
+              _saveDouble('set_fixed', value);
+            });
+          },
+          onPanFixedChanged: (value) {
+            setState(() {
+              _panFixed = value;
+              _saveDouble('pan_fixed', value);
+            });
+          },
+          onOnRangeChanged: (values) {
+            setState(() {
+              _onRange = values;
+              _saveDouble('on_min', values.start);
+              _saveDouble('on_max', values.end);
+            });
+          },
+          onSetRangeChanged: (values) {
+            setState(() {
+              _setRange = values;
+              _saveDouble('set_min', values.start);
+              _saveDouble('set_max', values.end);
+            });
+          },
+          onPanRangeChanged: (values) {
+            setState(() {
+              _panRange = values;
+              _saveDouble('pan_min', values.start);
+              _saveDouble('pan_max', values.end);
+            });
+          },
+          onOnAudioChanged: (path) {
+            setState(() {
+              _onAudioPath = path;
+              _saveString('on_audio_path', path);
+            });
+          },
+          onSetAudioChanged: (path) {
+            setState(() {
+              _setAudioPath = path;
+              _saveString('set_audio_path', path);
+            });
+          },
+          onGoAudioChanged: (path) {
+            setState(() {
+              _goAudioPath = path;
+              _saveString('go_audio_path', path);
+            });
+          },
+          openTimeLogsPage: _openTimeLogsPage,
+          addTestRecords: _addTestRecords,
+          deleteTestRecords: _deleteTestRecords,
+        ),
+      ),
     );
-    // Dispose controllers after modal is closed
-    lagController.dispose();
-    lagFocusNode.dispose();
+    
     if (mounted) {
       setState(() {
         _isSettingsOpen = false;
@@ -3961,13 +3034,34 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
   late String _logSortOrder;
   Set<DateTime> _filterDates = {};
   bool _isFilteredByCalendar = false;
+  
+  // Search state
+  String _searchQuery = '';
+  bool _isSearching = false;
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+
+  // Cached sorted indices for performance
+  List<int>? _cachedSortedIndices;
 
   final sortLabels = <String, String>{
     'time_asc': '秒数（昇順）',
     'time_desc': '秒数（降順）',
     'date_asc': '日付順（昇順）',
     'date_desc': '日付順（降順）',
+    'name_asc': '名前順（昇順）',
+    'name_desc': '名前順（降順）',
   };
+
+  // Helper to get display name for sorting (use date if title is empty)
+  String _getDisplayName(Map<String, dynamic> log) {
+    final title = (log['title'] as String?) ?? '';
+    if (title.isEmpty || title == '無題') {
+      final date = DateTime.parse(log['date'] as String);
+      return '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    }
+    return title;
+  }
 
   @override
   void initState() {
@@ -3976,12 +3070,20 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
     _loadLogs();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadLogs() async {
     final logs = await widget.loadTimeLogs();
     if (mounted) {
       setState(() {
         _logs = logs;
         _isLoading = false;
+        _invalidateSortCache();
       });
     }
   }
@@ -3994,8 +3096,24 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
     }).toSet();
   }
 
-  List<int> get _sortedIndices {
+  List<int> _computeSortedIndices() {
     var indices = List<int>.generate(_logs.length, (i) => i);
+
+    // Apply search filter if active (space-separated OR search)
+    if (_searchQuery.isNotEmpty) {
+      final keywords = _searchQuery.toLowerCase().split(RegExp(r'\s+')).where((k) => k.isNotEmpty).toList();
+      if (keywords.isNotEmpty) {
+        indices = indices.where((i) {
+          final log = _logs[i];
+          final title = ((log['title'] as String?) ?? '').toLowerCase();
+          final memo = ((log['memo'] as String?) ?? '').toLowerCase();
+          final time = (log['time'] as num).toDouble().toStringAsFixed(2);
+          // Match if any keyword is found in title, memo, or time
+          return keywords.any((keyword) =>
+              title.contains(keyword) || memo.contains(keyword) || time.contains(keyword));
+        }).toList();
+      }
+    }
 
     // Apply calendar filter if active
     if (_isFilteredByCalendar && _filterDates.isNotEmpty) {
@@ -4021,6 +3139,16 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
         case 'date_asc':
           final cmp = dateA.compareTo(dateB);
           return cmp != 0 ? cmp : timeA.compareTo(timeB);
+        case 'name_asc':
+          final nameA = _getDisplayName(_logs[a]).toLowerCase();
+          final nameB = _getDisplayName(_logs[b]).toLowerCase();
+          final cmp = nameA.compareTo(nameB);
+          return cmp != 0 ? cmp : dateA.compareTo(dateB);
+        case 'name_desc':
+          final nameA = _getDisplayName(_logs[a]).toLowerCase();
+          final nameB = _getDisplayName(_logs[b]).toLowerCase();
+          final cmp = nameB.compareTo(nameA);
+          return cmp != 0 ? cmp : dateB.compareTo(dateA);
         case 'date_desc':
         default:
           final cmp = dateB.compareTo(dateA);
@@ -4028,6 +3156,17 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
       }
     });
     return indices;
+  }
+
+  // Invalidate cache when data changes
+  void _invalidateSortCache() {
+    _cachedSortedIndices = null;
+  }
+
+  // Get cached sorted indices
+  List<int> get _sortedIndices {
+    _cachedSortedIndices ??= _computeSortedIndices();
+    return _cachedSortedIndices!;
   }
 
   Future<void> _deleteSelectedLogs() async {
@@ -4563,6 +3702,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                       crossAxisCount: 7,
                       mainAxisSpacing: 4,
                       crossAxisSpacing: 4,
+                      padding: EdgeInsets.zero,
                       children: days,
                     ),
                   ),
@@ -4572,34 +3712,38 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
 
             return AlertDialog(
               backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+              contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
               title: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    pickerMode == 'calendar'
-                        ? 'カレンダーから絞り込み'
-                        : (pickerMode == 'year' ? '年を選択' : '月を選択'),
-                    style: TextStyle(
-                      color: isDark ? Colors.white : Colors.black87,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 18,
-                    ),
-                  ),
-                  if (selectedDates.isNotEmpty)
+                  if (pickerMode != 'calendar')
+                    Text(
+                      pickerMode == 'year' ? '年を選択' : '月を選択',
+                      style: TextStyle(
+                        color: isDark ? Colors.white : Colors.black87,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 18,
+                      ),
+                    )
+                  else
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
+                        horizontal: 10,
+                        vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF2196F3),
+                        color: selectedDates.isNotEmpty
+                            ? const Color(0xFF2196F3)
+                            : (isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0)),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
                         '${selectedDates.length}個 選択中',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
+                        style: TextStyle(
+                          color: selectedDates.isNotEmpty
+                              ? Colors.white
+                              : (isDark ? Colors.white70 : Colors.black54),
+                          fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -4658,6 +3802,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
         _isFilteredByCalendar = true;
         _selectedIndices.clear();
         _isSelectionMode = false;
+        _invalidateSortCache();
       });
     }
   }
@@ -4712,16 +3857,26 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                 if (!_isSelectionMode)
                   TextButton(
                     onPressed: () async {
-                      final isFiltered = _isFilteredByCalendar && _filterDates.isNotEmpty;
-                      final filteredCount = isFiltered ? _sortedIndices.length : _logs.length;
-                      
+                      final isFiltered =
+                          (_isFilteredByCalendar && _filterDates.isNotEmpty) ||
+                          _searchQuery.isNotEmpty;
+                      final filteredCount = isFiltered
+                          ? _sortedIndices.length
+                          : _logs.length;
+
                       final confirm = await showDialog<bool>(
                         context: context,
                         builder: (context) => AlertDialog(
-                          title: Text(isFiltered ? '絞り込み中の記録を削除' : '全て削除'),
-                          content: Text(isFiltered 
-                              ? '現在絞り込まれている$filteredCount件の計測ログを削除しますか？'
-                              : '全ての計測ログを削除しますか？'),
+                          title: Text(
+                            isFiltered ? '絞り込み中の記録を削除' : '全て削除',
+                            softWrap: false,
+                            overflow: TextOverflow.visible,
+                          ),
+                          content: Text(
+                            isFiltered
+                                ? '現在絞り込まれている$filteredCount件の計測ログを削除しますか？'
+                                : '全ての計測ログを削除しますか？',
+                          ),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context, false),
@@ -4749,18 +3904,25 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                           setState(() {
                             _filterDates.clear();
                             _isFilteredByCalendar = false;
+                            _searchQuery = '';
+                            _searchController.clear();
+                            _isSearching = false;
+                            _invalidateSortCache();
                           });
                         } else {
                           await widget.clearAllTimeLogs();
                           setState(() {
                             _logs.clear();
+                            _invalidateSortCache();
                           });
                         }
                       }
                     },
-                    child: const Text(
+                    child: Text(
                       '全て削除',
-                      style: TextStyle(color: Colors.red),
+                      style: const TextStyle(color: Colors.red),
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
               ],
@@ -4785,7 +3947,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                           children: [
                             Expanded(
                               child: Text(
-                                'カレンダーから絞り込み ${_filterDates.length}個',
+                                '${_filterDates.length}個 選択中',
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w500,
@@ -4800,6 +3962,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                 setState(() {
                                   _isFilteredByCalendar = false;
                                   _filterDates.clear();
+                                  _invalidateSortCache();
                                 });
                               },
                               child: Icon(
@@ -4819,36 +3982,93 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            // Calendar button
-                            GestureDetector(
-                              onTap: _showCalendarDialog,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.calendar_month,
-                                    size: 20,
-                                    color: _isFilteredByCalendar
-                                        ? const Color(0xFF2196F3)
-                                        : (isDark
-                                              ? Colors.white70
-                                              : Colors.black54),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'カレンダー',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: _isFilteredByCalendar
-                                          ? const Color(0xFF2196F3)
-                                          : (isDark
-                                                ? Colors.white70
-                                                : Colors.black54),
+                            // Search and Calendar buttons
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Search button
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _isSearching = !_isSearching;
+                                      if (_isSearching) {
+                                        _searchFocusNode.requestFocus();
+                                      }
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _isSearching
+                                          ? const Color(0xFFFF9800).withOpacity(0.15)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.search,
+                                          size: 20,
+                                          color: _isSearching
+                                              ? const Color(0xFFFF9800)
+                                              : (isDark
+                                                    ? Colors.white70
+                                                    : Colors.black54),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '検索',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                            color: _isSearching
+                                                ? const Color(0xFFFF9800)
+                                                : (isDark
+                                                      ? Colors.white70
+                                                      : Colors.black54),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(width: 16),
+                                // Calendar button
+                                GestureDetector(
+                                  onTap: _showCalendarDialog,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_month,
+                                        size: 20,
+                                        color: _isFilteredByCalendar
+                                            ? const Color(0xFF2196F3)
+                                            : (isDark
+                                                  ? Colors.white70
+                                                  : Colors.black54),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'カレンダー',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: _isFilteredByCalendar
+                                              ? const Color(0xFF2196F3)
+                                              : (isDark
+                                                    ? Colors.white70
+                                                    : Colors.black54),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                             // Sort dropdown
                             PopupMenuButton<String>(
@@ -4859,6 +4079,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                 widget.onSortOrderChanged(value);
                                 setState(() {
                                   _logSortOrder = value;
+                                  _invalidateSortCache();
                                 });
                               },
                               itemBuilder: (context) => sortLabels.entries
@@ -4896,6 +4117,45 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                           ],
                         ),
                       ),
+                    // Search input field
+                    if (_isSearching)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                        child: TextField(
+                          controller: _searchController,
+                          focusNode: _searchFocusNode,
+                          decoration: InputDecoration(
+                            hintText: '題名、メモ、秒数で検索',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _searchController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      setState(() {
+                                        _searchController.clear();
+                                        _searchQuery = '';
+                                        _invalidateSortCache();
+                                      });
+                                    },
+                                  )
+                                : null,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            isDense: true,
+                          ),
+                          onChanged: (value) {
+                            setState(() {
+                              _searchQuery = value;
+                              _invalidateSortCache();
+                            });
+                          },
+                        ),
+                      ),
                     Expanded(
                       child: _logs.isEmpty
                           ? Center(
@@ -4911,7 +4171,9 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                           : _sortedIndices.isEmpty
                           ? Center(
                               child: Text(
-                                '選択した日付に記録がありません',
+                                _searchQuery.isNotEmpty
+                                    ? '検索結果がありません'
+                                    : '選択した日付に記録がありません',
                                 style: TextStyle(
                                   color: isDark
                                       ? Colors.white70
@@ -4922,6 +4184,8 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                           : ListView.builder(
                               padding: const EdgeInsets.all(20),
                               itemCount: _sortedIndices.length,
+                              addAutomaticKeepAlives: false,
+                              addRepaintBoundaries: true,
                               itemBuilder: (context, index) {
                                 final sortedIndex = _sortedIndices[index];
                                 final log = _logs[sortedIndex];
@@ -4934,8 +4198,10 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                 final isSelected = _selectedIndices.contains(
                                   sortedIndex,
                                 );
-                                final rawTitle = (log['title'] as String?) ?? '';
-                                final hasTitle = rawTitle.isNotEmpty && rawTitle != '無題';
+                                final rawTitle =
+                                    (log['title'] as String?) ?? '';
+                                final hasTitle =
+                                    rawTitle.isNotEmpty && rawTitle != '無題';
                                 final memo = (log['memo'] as String?) ?? '';
 
                                 return GestureDetector(
@@ -5293,6 +4559,1311 @@ class _LogEditPageState extends State<LogEditPage> {
                   maxLines: 12,
                   minLines: 6,
                 ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Settings Page as full screen
+class SettingsPage extends StatefulWidget {
+  final bool timeMeasurementEnabled;
+  final bool autoSaveEnabled;
+  final String triggerMethod;
+  final double lagCompensation;
+  final bool loopEnabled;
+  final bool randomOn;
+  final bool randomSet;
+  final bool randomPan;
+  final double onFixed;
+  final double setFixed;
+  final double panFixed;
+  final RangeValues onRange;
+  final RangeValues setRange;
+  final RangeValues panRange;
+  final String onAudioPath;
+  final String setAudioPath;
+  final String goAudioPath;
+  final bool isRunning;
+  final AudioPlayer player;
+  final ValueChanged<bool> onTimeMeasurementChanged;
+  final ValueChanged<bool> onAutoSaveChanged;
+  final ValueChanged<String> onTriggerMethodChanged;
+  final ValueChanged<double> onLagCompensationChanged;
+  final ValueChanged<bool> onLoopChanged;
+  final ValueChanged<bool> onRandomOnChanged;
+  final ValueChanged<bool> onRandomSetChanged;
+  final ValueChanged<bool> onRandomPanChanged;
+  final ValueChanged<double> onOnFixedChanged;
+  final ValueChanged<double> onSetFixedChanged;
+  final ValueChanged<double> onPanFixedChanged;
+  final ValueChanged<RangeValues> onOnRangeChanged;
+  final ValueChanged<RangeValues> onSetRangeChanged;
+  final ValueChanged<RangeValues> onPanRangeChanged;
+  final ValueChanged<String> onOnAudioChanged;
+  final ValueChanged<String> onSetAudioChanged;
+  final ValueChanged<String> onGoAudioChanged;
+  final VoidCallback openTimeLogsPage;
+  final Future<void> Function() addTestRecords;
+  final Future<void> Function() deleteTestRecords;
+
+  const SettingsPage({
+    super.key,
+    required this.timeMeasurementEnabled,
+    required this.autoSaveEnabled,
+    required this.triggerMethod,
+    required this.lagCompensation,
+    required this.loopEnabled,
+    required this.randomOn,
+    required this.randomSet,
+    required this.randomPan,
+    required this.onFixed,
+    required this.setFixed,
+    required this.panFixed,
+    required this.onRange,
+    required this.setRange,
+    required this.panRange,
+    required this.onAudioPath,
+    required this.setAudioPath,
+    required this.goAudioPath,
+    required this.isRunning,
+    required this.player,
+    required this.onTimeMeasurementChanged,
+    required this.onAutoSaveChanged,
+    required this.onTriggerMethodChanged,
+    required this.onLagCompensationChanged,
+    required this.onLoopChanged,
+    required this.onRandomOnChanged,
+    required this.onRandomSetChanged,
+    required this.onRandomPanChanged,
+    required this.onOnFixedChanged,
+    required this.onSetFixedChanged,
+    required this.onPanFixedChanged,
+    required this.onOnRangeChanged,
+    required this.onSetRangeChanged,
+    required this.onPanRangeChanged,
+    required this.onOnAudioChanged,
+    required this.onSetAudioChanged,
+    required this.onGoAudioChanged,
+    required this.openTimeLogsPage,
+    required this.addTestRecords,
+    required this.deleteTestRecords,
+  });
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  late bool _timeMeasurementEnabled;
+  late bool _autoSaveEnabled;
+  late String _triggerMethod;
+  late double _lagCompensation;
+  late bool _loopEnabled;
+  late bool _randomOn;
+  late bool _randomSet;
+  late bool _randomPan;
+  late double _onFixed;
+  late double _setFixed;
+  late double _panFixed;
+  late RangeValues _onRange;
+  late RangeValues _setRange;
+  late RangeValues _panRange;
+  late String _onAudioPath;
+  late String _setAudioPath;
+  late String _goAudioPath;
+  late TextEditingController _lagController;
+  late FocusNode _lagFocusNode;
+  bool _audioSettingsExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timeMeasurementEnabled = widget.timeMeasurementEnabled;
+    _autoSaveEnabled = widget.autoSaveEnabled;
+    _triggerMethod = widget.triggerMethod;
+    _lagCompensation = widget.lagCompensation;
+    _loopEnabled = widget.loopEnabled;
+    _randomOn = widget.randomOn;
+    _randomSet = widget.randomSet;
+    _randomPan = widget.randomPan;
+    _onFixed = widget.onFixed;
+    _setFixed = widget.setFixed;
+    _panFixed = widget.panFixed;
+    _onRange = widget.onRange;
+    _setRange = widget.setRange;
+    _panRange = widget.panRange;
+    _onAudioPath = widget.onAudioPath;
+    _setAudioPath = widget.setAudioPath;
+    _goAudioPath = widget.goAudioPath;
+    _lagController = TextEditingController(text: _lagCompensation.toStringAsFixed(2));
+    _lagFocusNode = FocusNode();
+  }
+
+  @override
+  void dispose() {
+    _lagController.dispose();
+    _lagFocusNode.dispose();
+    super.dispose();
+  }
+
+  Widget _buildTriggerChip(
+    String value,
+    String label,
+    IconData icon,
+    bool isDark,
+  ) {
+    final isSelected = _triggerMethod == value;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _triggerMethod = value;
+        });
+        widget.onTriggerMethodChanged(value);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF00BCD4).withOpacity(0.2)
+              : (isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5)),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF00BCD4)
+                : (isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0)),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: isSelected
+                  ? const Color(0xFF00BCD4)
+                  : (isDark ? Colors.white70 : Colors.black54),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: isSelected
+                    ? const Color(0xFF00BCD4)
+                    : (isDark ? Colors.white70 : Colors.black54),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPhaseSetting({
+    required String title,
+    required bool randomEnabled,
+    required ValueChanged<bool> onRandomChanged,
+    required double fixedValue,
+    required RangeValues rangeValues,
+    required ValueChanged<double> onFixedChanged,
+    required ValueChanged<RangeValues> onRangeChanged,
+    required double maxSeconds,
+    required List<AudioOption> audioOptions,
+    required String selectedAudioPath,
+    required ValueChanged<String> onAudioChanged,
+    required VoidCallback onPreviewAudio,
+  }) {
+    const sliderMin = 0.5;
+    final sliderMax = maxSeconds;
+    final isDark = themeNotifier.value;
+
+    final selectedAudio = audioOptions.firstWhere(
+      (option) => option.path == selectedAudioPath,
+      orElse: () => audioOptions.first,
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF141B26) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+            spreadRadius: 1,
+            blurRadius: 0,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              PopupMenuButton<String>(
+                enabled: !widget.isRunning,
+                padding: EdgeInsets.zero,
+                offset: const Offset(0, 48),
+                elevation: 8,
+                color: isDark ? const Color(0xFF1A2332) : Colors.white,
+                shadowColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                onSelected: onAudioChanged,
+                itemBuilder: (context) => audioOptions.map((option) {
+                  final isSelected = option.path == selectedAudioPath;
+                  return PopupMenuItem<String>(
+                    value: option.path,
+                    height: 52,
+                    child: Text(
+                      option.name,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: isDark
+                            ? (isSelected ? Colors.white : Colors.white70)
+                            : (isSelected
+                                  ? const Color(0xFF3A3A3A)
+                                  : const Color(0xFF1F1F1F)),
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                  );
+                }).toList(),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      Icons.keyboard_arrow_down,
+                      color: isDark ? Colors.white70 : Colors.black54,
+                      size: 26,
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: onPreviewAudio,
+                child: const Icon(
+                  Icons.volume_up,
+                  color: Color(0xFF6BCB1F),
+                  size: 28,
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              selectedAudio.name,
+              style: const TextStyle(color: Color(0xFF6BCB1F), fontSize: 14),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (randomEnabled)
+            Row(
+              children: [
+                _buildNumberInput(
+                  value: rangeValues.start,
+                  min: sliderMin,
+                  max: rangeValues.end,
+                  enabled: !widget.isRunning,
+                  onChanged: (value) {
+                    if (value <= rangeValues.end) {
+                      onRangeChanged(RangeValues(value, rangeValues.end));
+                    }
+                  },
+                ),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: const Color(0xFF6BCB1F),
+                      inactiveTrackColor: isDark
+                          ? const Color(0xFF2A3543)
+                          : const Color(0xFFD0D0D0),
+                      thumbColor: const Color(0xFF6BCB1F),
+                      overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
+                    ),
+                    child: RangeSlider(
+                      values: rangeValues,
+                      min: sliderMin,
+                      max: sliderMax,
+                      divisions: ((sliderMax - sliderMin) * 10).round(),
+                      onChanged: widget.isRunning ? null : onRangeChanged,
+                    ),
+                  ),
+                ),
+                _buildNumberInput(
+                  value: rangeValues.end,
+                  min: rangeValues.start,
+                  max: sliderMax,
+                  enabled: !widget.isRunning,
+                  onChanged: (value) {
+                    if (value >= rangeValues.start) {
+                      onRangeChanged(RangeValues(rangeValues.start, value));
+                    }
+                  },
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                _buildNumberInput(
+                  value: fixedValue,
+                  min: sliderMin,
+                  max: sliderMax,
+                  enabled: !widget.isRunning,
+                  onChanged: onFixedChanged,
+                ),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: const Color(0xFF6BCB1F),
+                      inactiveTrackColor: isDark
+                          ? const Color(0xFF2A3543)
+                          : const Color(0xFFD0D0D0),
+                      thumbColor: const Color(0xFF6BCB1F),
+                      overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
+                    ),
+                    child: Slider(
+                      value: fixedValue,
+                      min: sliderMin,
+                      max: sliderMax,
+                      divisions: ((sliderMax - sliderMin) * 10).round(),
+                      onChanged: widget.isRunning ? null : onFixedChanged,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 85),
+              ],
+            ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Text(
+                'ランダム',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDark ? Colors.white70 : Colors.black54,
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 28,
+                width: 48,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: Switch(
+                    value: randomEnabled,
+                    activeColor: const Color(0xFF6BCB1F),
+                    onChanged: widget.isRunning ? null : onRandomChanged,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNumberInput({
+    required double value,
+    required double min,
+    required double max,
+    required ValueChanged<double> onChanged,
+    required bool enabled,
+    double width = 85,
+  }) {
+    return _NumberInputField(
+      value: value,
+      min: min,
+      max: max,
+      onChanged: onChanged,
+      enabled: enabled,
+      width: width,
+    );
+  }
+
+  void _showCreditsDialog(BuildContext context) {
+    final isDark = themeNotifier.value;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
+          padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomPadding),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0E131A) : const Color(0xFFF0F0F0),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 48,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF3A4654) : const Color(0xFFBDBDBD),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'クレジット',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '♪音声素材',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildCreditLink(
+                        '音読さん',
+                        'https://ondoku3.com/',
+                        isDark,
+                      ),
+                      _buildCreditLink(
+                        'On-Jin ~音人~',
+                        'https://on-jin.com/',
+                        isDark,
+                      ),
+                      _buildCreditLink(
+                        'OtoLogic',
+                        'https://otologic.jp',
+                        isDark,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCreditLink(String name, String url, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: GestureDetector(
+        onTap: () async {
+          final uri = Uri.parse(url);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+        },
+        child: Text(
+          name,
+          style: TextStyle(
+            fontSize: 14,
+            color: isDark ? const Color(0xFF64B5F6) : const Color(0xFF1976D2),
+            decoration: TextDecoration.underline,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: themeNotifier,
+      builder: (context, isDark, _) {
+        return Scaffold(
+          backgroundColor: isDark ? const Color(0xFF0E131A) : const Color(0xFFF0F0F0),
+          appBar: AppBar(
+            backgroundColor: isDark ? const Color(0xFF0E131A) : const Color(0xFFF0F0F0),
+            elevation: 0,
+            leading: IconButton(
+              icon: Icon(
+                Icons.arrow_back,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: Text(
+              '設定',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+            ),
+          ),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Time logs button
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: widget.openTimeLogsPage,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF141B26) : Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                            spreadRadius: 1,
+                            blurRadius: 0,
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.history, color: PhaseColors.finish, size: 28),
+                              const SizedBox(width: 14),
+                              Text(
+                                '計測ログ',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Icon(
+                            Icons.chevron_right,
+                            color: isDark ? Colors.white54 : Colors.black45,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Theme setting
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF141B26) : Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                        spreadRadius: 1,
+                        blurRadius: 0,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            isDark ? Icons.dark_mode : Icons.light_mode,
+                            color: const Color(0xFF6BCB1F),
+                            size: 28,
+                          ),
+                          const SizedBox(width: 14),
+                          Text(
+                            'ダークモード',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(
+                        height: 32,
+                        width: 52,
+                        child: FittedBox(
+                          fit: BoxFit.contain,
+                          child: Switch(
+                            value: isDark,
+                            onChanged: (value) async {
+                              themeNotifier.value = value;
+                              final prefs = await SharedPreferences.getInstance();
+                              prefs.setBool('dark_mode', value);
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Time measurement setting
+                Container(
+                  padding: EdgeInsets.symmetric(vertical: 16, horizontal: 20).copyWith(
+                    bottom: _timeMeasurementEnabled ? 20 : 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF141B26) : Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                        spreadRadius: 1,
+                        blurRadius: 0,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.timer, color: Color(0xFF6BCB1F), size: 28),
+                              const SizedBox(width: 14),
+                              Text(
+                                'タイム計測',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(
+                            height: 32,
+                            width: 52,
+                            child: FittedBox(
+                              fit: BoxFit.contain,
+                              child: Switch(
+                                value: _timeMeasurementEnabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _timeMeasurementEnabled = value;
+                                    if (value && _loopEnabled) {
+                                      _loopEnabled = false;
+                                      widget.onLoopChanged(false);
+                                    }
+                                  });
+                                  widget.onTimeMeasurementChanged(value);
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_timeMeasurementEnabled) ...[
+                        const SizedBox(height: 16),
+                        Divider(
+                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          height: 1,
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            const Icon(Icons.save_alt, color: Color(0xFF00BCD4), size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'オートセーブ',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              height: 28,
+                              width: 48,
+                              child: FittedBox(
+                                fit: BoxFit.contain,
+                                child: Switch(
+                                  value: _autoSaveEnabled,
+                                  activeColor: const Color(0xFF00BCD4),
+                                  onChanged: (value) {
+                                    setState(() => _autoSaveEnabled = value);
+                                    widget.onAutoSaveChanged(value);
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Text(
+                              'トリガー',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: isDark ? Colors.white70 : Colors.black54,
+                              ),
+                            ),
+                            const Spacer(),
+                            _buildTriggerChip('tap', 'タップ', Icons.touch_app, isDark),
+                            const SizedBox(width: 8),
+                            _buildTriggerChip('hardware_button', 'ボタン', Icons.smart_button, isDark),
+                          ],
+                        ),
+                        if (_triggerMethod == 'tap') ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline, size: 16, color: isDark ? Colors.white54 : Colors.black45),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    '計測中に画面をタップすると計測が停止します',
+                                    style: TextStyle(fontSize: 12, color: isDark ? Colors.white70 : Colors.black54),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (_triggerMethod == 'hardware_button') ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline, size: 16, color: isDark ? Colors.white54 : Colors.black45),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    '計測中にイヤホンボタン、Bluetoothリモコン、または音量ボタンを押すと計測が停止します',
+                                    style: TextStyle(fontSize: 12, color: isDark ? Colors.white70 : Colors.black54),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'ラグを考慮',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? Colors.white70 : Colors.black54,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'トリガーの遅延を補正します（0〜1秒）',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.white54 : Colors.black45,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SliderTheme(
+                                  data: SliderTheme.of(context).copyWith(
+                                    activeTrackColor: const Color(0xFF00BCD4),
+                                    inactiveTrackColor: isDark ? const Color(0xFF1A2332) : const Color(0xFFE0E0E0),
+                                    thumbColor: const Color(0xFF00BCD4),
+                                    overlayColor: const Color(0xFF00BCD4).withOpacity(0.2),
+                                  ),
+                                  child: Slider(
+                                    value: _lagCompensation,
+                                    min: 0.0,
+                                    max: 1.0,
+                                    divisions: 100,
+                                    onChanged: (value) {
+                                      setState(() => _lagCompensation = value);
+                                      widget.onLagCompensationChanged(value);
+                                      if (_lagFocusNode.hasFocus) _lagFocusNode.unfocus();
+                                      _lagController.text = value.toStringAsFixed(2);
+                                    },
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              SizedBox(
+                                width: 70,
+                                child: TextField(
+                                  controller: _lagController,
+                                  focusNode: _lagFocusNode,
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? Colors.white : Colors.black87,
+                                  ),
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                                    suffixText: '秒',
+                                    suffixStyle: TextStyle(
+                                      fontSize: 12,
+                                      color: isDark ? Colors.white54 : Colors.black45,
+                                    ),
+                                    filled: true,
+                                    fillColor: isDark ? const Color(0xFF1A2332) : const Color(0xFFF0F0F0),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(
+                                        color: isDark ? const Color(0xFF2A3543) : const Color(0xFFD0D0D0),
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(
+                                        color: isDark ? const Color(0xFF2A3543) : const Color(0xFFD0D0D0),
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: const BorderSide(color: Color(0xFF00BCD4), width: 2),
+                                    ),
+                                  ),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                                  ],
+                                  onSubmitted: (value) {
+                                    final trimmed = value.trim();
+                                    double newValue;
+                                    if (trimmed.isEmpty) {
+                                      newValue = _lagCompensation;
+                                    } else {
+                                      final parsed = double.tryParse(trimmed);
+                                      newValue = parsed != null ? parsed.clamp(0.0, 1.0) : _lagCompensation;
+                                    }
+                                    setState(() => _lagCompensation = newValue);
+                                    widget.onLagCompensationChanged(newValue);
+                                    _lagController.text = newValue.toStringAsFixed(2);
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_lagCompensation > 0) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00BCD4).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFF00BCD4).withOpacity(0.3)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.timer, size: 16, color: Color(0xFF00BCD4)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      '計測終了時、タイムから${_lagCompensation.toStringAsFixed(2)}秒を差し引きます',
+                                      style: const TextStyle(fontSize: 12, color: Color(0xFF00BCD4)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Loop setting
+                Opacity(
+                  opacity: _timeMeasurementEnabled ? 0.5 : 1.0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF141B26) : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          spreadRadius: 1,
+                          blurRadius: 0,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.repeat, color: Color(0xFF6BCB1F), size: 28),
+                            const SizedBox(width: 14),
+                            Text(
+                              'ループ',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(
+                          height: 32,
+                          width: 52,
+                          child: FittedBox(
+                            fit: BoxFit.contain,
+                            child: Switch(
+                              value: _loopEnabled,
+                              onChanged: _timeMeasurementEnabled
+                                  ? null
+                                  : (value) {
+                                      setState(() => _loopEnabled = value);
+                                      widget.onLoopChanged(value);
+                                    },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Audio settings (collapsible)
+                GestureDetector(
+                  onTap: () => setState(() => _audioSettingsExpanded = !_audioSettingsExpanded),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF141B26) : Colors.white,
+                      borderRadius: _audioSettingsExpanded
+                          ? const BorderRadius.vertical(top: Radius.circular(16))
+                          : BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          spreadRadius: 1,
+                          blurRadius: 0,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.volume_up, color: Color(0xFF6BCB1F), size: 28),
+                            const SizedBox(width: 14),
+                            Text(
+                              '音声設定',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Icon(
+                          _audioSettingsExpanded ? Icons.expand_less : Icons.expand_more,
+                          color: isDark ? Colors.white54 : Colors.black45,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (_audioSettingsExpanded) ...[
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF141B26) : Colors.white,
+                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          spreadRadius: 1,
+                          blurRadius: 0,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 8),
+                        _buildPhaseSetting(
+                          title: 'On Your Marks',
+                          randomEnabled: _randomOn,
+                          onRandomChanged: (value) {
+                            setState(() => _randomOn = value);
+                            widget.onRandomOnChanged(value);
+                          },
+                          fixedValue: _onFixed,
+                          rangeValues: _onRange,
+                          onFixedChanged: (value) {
+                            setState(() => _onFixed = value);
+                            widget.onOnFixedChanged(value);
+                          },
+                          onRangeChanged: (values) {
+                            setState(() => _onRange = values);
+                            widget.onOnRangeChanged(values);
+                          },
+                          maxSeconds: 30,
+                          audioOptions: AudioOptions.onYourMarks,
+                          selectedAudioPath: _onAudioPath,
+                          onAudioChanged: (path) {
+                            setState(() => _onAudioPath = path);
+                            widget.onOnAudioChanged(path);
+                          },
+                          onPreviewAudio: () {
+                            if (_onAudioPath.isNotEmpty) widget.player.play(AssetSource(_onAudioPath));
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        _buildPhaseSetting(
+                          title: 'Set',
+                          randomEnabled: _randomSet,
+                          onRandomChanged: (value) {
+                            setState(() => _randomSet = value);
+                            widget.onRandomSetChanged(value);
+                          },
+                          fixedValue: _setFixed,
+                          rangeValues: _setRange,
+                          onFixedChanged: (value) {
+                            setState(() => _setFixed = value);
+                            widget.onSetFixedChanged(value);
+                          },
+                          onRangeChanged: (values) {
+                            setState(() => _setRange = values);
+                            widget.onSetRangeChanged(values);
+                          },
+                          maxSeconds: 40,
+                          audioOptions: AudioOptions.set,
+                          selectedAudioPath: _setAudioPath,
+                          onAudioChanged: (path) {
+                            setState(() => _setAudioPath = path);
+                            widget.onSetAudioChanged(path);
+                          },
+                          onPreviewAudio: () {
+                            if (_setAudioPath.isNotEmpty) widget.player.play(AssetSource(_setAudioPath));
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        _buildPhaseSetting(
+                          title: 'Go',
+                          randomEnabled: _randomPan,
+                          onRandomChanged: (value) {
+                            setState(() => _randomPan = value);
+                            widget.onRandomPanChanged(value);
+                          },
+                          fixedValue: _panFixed,
+                          rangeValues: _panRange,
+                          onFixedChanged: (value) {
+                            setState(() => _panFixed = value);
+                            widget.onPanFixedChanged(value);
+                          },
+                          onRangeChanged: (values) {
+                            setState(() => _panRange = values);
+                            widget.onPanRangeChanged(values);
+                          },
+                          maxSeconds: 10,
+                          audioOptions: AudioOptions.go,
+                          selectedAudioPath: _goAudioPath,
+                          onAudioChanged: (path) {
+                            setState(() => _goAudioPath = path);
+                            widget.onGoAudioChanged(path);
+                          },
+                          onPreviewAudio: () {
+                            if (_goAudioPath.isNotEmpty) widget.player.play(AssetSource(_goAudioPath));
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 24),
+                // Credit button
+                GestureDetector(
+                  onTap: () => _showCreditsDialog(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF141B26) : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          spreadRadius: 1,
+                          blurRadius: 0,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              color: isDark ? Colors.white70 : Colors.black54,
+                              size: 26,
+                            ),
+                            const SizedBox(width: 14),
+                            Text(
+                              'クレジット',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Icon(
+                          Icons.chevron_right,
+                          color: isDark ? Colors.white70 : Colors.black54,
+                          size: 28,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Debug section
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 8),
+                  child: Text(
+                    'デバッグ',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white54 : Colors.black45,
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () async {
+                    await widget.addTestRecords();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('50個のテスト用記録を追加しました'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF141B26) : Colors.white,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          spreadRadius: 1,
+                          blurRadius: 0,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.add_circle_outline, color: Colors.orange, size: 24),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            'テスト用の記録を追加（50件）',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () async {
+                    await widget.deleteTestRecords();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('テスト用の記録を削除しました'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF141B26) : Colors.white,
+                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                          spreadRadius: 1,
+                          blurRadius: 0,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.delete_outline, color: Colors.red, size: 24),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            'テスト用の記録を消す',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 40),
               ],
             ),
           ),
