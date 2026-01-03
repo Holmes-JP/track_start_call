@@ -139,6 +139,10 @@ class PhaseColors {
   static const finish = Color(0xFFFFD700);
   static const finishSecondary = Color(0xFFFFA000);
 
+  // Flying colors (red for violation)
+  static const flyingStart = Color(0xFFE53935);
+  static const flyingStartSecondary = Color(0xFFB71C1C);
+
   static Color getStartColor(String phase) {
     switch (phase) {
       case 'Ready':
@@ -153,6 +157,8 @@ class PhaseColors {
         return measuring;
       case 'FINISH':
         return finish;
+      case 'FLYING START':
+        return flyingStart;
       default:
         return readyStart;
     }
@@ -172,6 +178,8 @@ class PhaseColors {
         return measuring;
       case 'FINISH':
         return finish;
+      case 'FLYING START':
+        return flyingStart;
       default:
         return ready;
     }
@@ -191,6 +199,8 @@ class PhaseColors {
         return measuringSecondary;
       case 'FINISH':
         return finishSecondary;
+      case 'FLYING START':
+        return flyingStartSecondary;
       default:
         return readySecondary;
     }
@@ -282,6 +292,7 @@ class StartCallHomePage extends StatefulWidget {
 class _StartCallHomePageState extends State<StartCallHomePage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late AudioPlayer _player;
+  late AudioPlayer _buzzerPlayer; // Separate player for flying buzzer
   final _random = Random();
   bool _isInBackground = false;
   SharedPreferences? _prefs;
@@ -389,6 +400,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
 
   Future<void> _initAudioPlayer() async {
     _player = AudioPlayer();
+    _buzzerPlayer = AudioPlayer(); // Initialize buzzer player
     // Configure audio player for background playback
     await _player.setPlayerMode(PlayerMode.mediaPlayer);
     await _player.setAudioContext(
@@ -406,6 +418,26 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         ),
       ),
     );
+    // Configure buzzer player (use mediaPlayer mode for better compatibility)
+    await _buzzerPlayer.setPlayerMode(PlayerMode.mediaPlayer);
+    await _buzzerPlayer.setAudioContext(
+      AudioContext(
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.playback,
+          options: {AVAudioSessionOptions.mixWithOthers},
+        ),
+        android: AudioContextAndroid(
+          isSpeakerphoneOn: false,
+          stayAwake: true,
+          contentType: AndroidContentType.sonification,
+          usageType: AndroidUsageType.notification,
+          audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+        ),
+      ),
+    );
+
+    // Preload buzzer sound for faster playback
+    await _buzzerPlayer.setSource(AssetSource('audio/Flying/buzzer.mp3'));
   }
 
   @override
@@ -431,6 +463,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     _hardwareButtonSubscription?.cancel();
     _progressController.dispose();
     _player.dispose();
+    _buzzerPlayer.dispose();
     super.dispose();
   }
 
@@ -585,20 +618,23 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     var lastTime = DateTime.now();
 
     while (elapsedMs < totalMs) {
-      if (!mounted || runId != _runToken) {
+      if (!mounted || runId != _runToken || _isFlying) {
         return false;
       }
 
       if (_isPaused) {
         // While paused, don't count time
-        while (_isPaused && mounted && runId == _runToken) {
+        while (_isPaused && mounted && runId == _runToken && !_isFlying) {
           await Future.delayed(const Duration(milliseconds: 50));
         }
-        if (!mounted || runId != _runToken) return false;
+        if (!mounted || runId != _runToken || _isFlying) return false;
         lastTime = DateTime.now(); // Reset timer after pause
       }
 
       await Future.delayed(const Duration(milliseconds: 16)); // ~60fps
+
+      // Check for flying after delay
+      if (_isFlying) return false;
 
       final now = DateTime.now();
       final deltaMs = now.difference(lastTime).inMilliseconds;
@@ -631,7 +667,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     String? labelBeforePlay,
     Color? completedPhaseColor, // Color to add when this phase completes
   }) async {
-    if (!mounted || runId != _runToken) {
+    if (!mounted || runId != _runToken || _isFlying) {
       return false;
     }
 
@@ -642,11 +678,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     if (mounted && !_isInBackground) setState(() {});
 
     final waitOk = await _waitWithPause(runId, seconds);
-    if (!waitOk) {
+    if (!waitOk || _isFlying) {
       return false;
     }
 
-    if (!mounted || runId != _runToken) {
+    if (!mounted || runId != _runToken || _isFlying) {
       return false;
     }
 
@@ -658,11 +694,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     _phaseLabel = labelOnPlay;
     _animatedProgress = 0.0;
     if (mounted && !_isInBackground) setState(() {});
-    // Only play audio if path is not empty
-    if (assetPath.isNotEmpty) {
+    // Only play audio if path is not empty and not flying
+    if (assetPath.isNotEmpty && !_isFlying) {
       await _player.play(AssetSource(assetPath));
     }
-    return mounted && runId == _runToken;
+    return mounted && runId == _runToken && !_isFlying;
   }
 
   Future<void> _startSequence() async {
@@ -744,8 +780,15 @@ class _StartCallHomePageState extends State<StartCallHomePage>
 
       // Start accelerometer listening BEFORE GO for reaction measurement
       if (_timeMeasurementEnabled &&
-          (_measurementTarget == 'reaction' || _measurementTarget == 'goal_and_reaction')) {
+          (_measurementTarget == 'reaction' ||
+              _measurementTarget == 'goal_and_reaction')) {
         _startReactionListening();
+      }
+
+      // Check if flying was detected during Set phase countdown
+      if (_isFlying) {
+        // Flying already detected - don't play Go, just return
+        return;
       }
 
       final panOk = await _runPhase(
@@ -756,16 +799,16 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         completedPhaseColor: setColor,
       );
 
+      // Check again if flying was detected during Go countdown
+      if (_isFlying) {
+        return;
+      }
+
       // Record GO signal time for reaction measurement
       if (_timeMeasurementEnabled &&
-          (_measurementTarget == 'reaction' || _measurementTarget == 'goal_and_reaction')) {
+          (_measurementTarget == 'reaction' ||
+              _measurementTarget == 'goal_and_reaction')) {
         _goSignalTime = DateTime.now();
-        // If flying was detected before GO, calculate how early
-        if (_isFlying && _flyingEarlyTime == null) {
-          // Flying was already detected, stop everything
-          _stopTimeMeasurement();
-          return;
-        }
       }
 
       if (!panOk) {
@@ -867,14 +910,16 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     _showMeasurementResult = false;
 
     // Start stopwatch for goal measurement
-    if (_measurementTarget == 'goal' || _measurementTarget == 'goal_and_reaction') {
+    if (_measurementTarget == 'goal' ||
+        _measurementTarget == 'goal_and_reaction') {
       _stopwatch.reset();
       _stopwatch.start();
     }
 
     // Set up volume key listener for earphone/Bluetooth remote triggers (goal modes only)
     // This uses native Android integration to intercept volume keys without showing HUD
-    if ((_measurementTarget == 'goal' || _measurementTarget == 'goal_and_reaction') &&
+    if ((_measurementTarget == 'goal' ||
+            _measurementTarget == 'goal_and_reaction') &&
         _triggerMethod == 'hardware_button') {
       _volumeKeySubscription?.cancel();
       _hardwareButtonSubscription?.cancel();
@@ -917,7 +962,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
 
     if (_isMeasuring) {
       // For goal measurement
-      if (_measurementTarget == 'goal' || _measurementTarget == 'goal_and_reaction') {
+      if (_measurementTarget == 'goal' ||
+          _measurementTarget == 'goal_and_reaction') {
         _measuredTime = _stopwatch.elapsedMilliseconds / 1000.0;
       }
       _isMeasuring = false;
@@ -948,33 +994,40 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     _reactionTime = null;
     _goSignalTime = null;
 
-    _accelerometerSubscription = accelerometerEventStream(
-      samplingPeriod: const Duration(milliseconds: 10),
-    ).listen((AccelerometerEvent event) {
-      // Use Z-axis for detecting forward movement
-      final zForce = event.z.abs();
+    _accelerometerSubscription =
+        accelerometerEventStream(
+          samplingPeriod: const Duration(
+            microseconds: 5000,
+          ), // 5ms for better precision
+        ).listen((AccelerometerEvent event) {
+          // Use Z-axis for detecting forward movement
+          final zForce = event.z.abs();
 
-      if (zForce >= _reactionThreshold) {
-        final now = DateTime.now();
+          if (zForce >= _reactionThreshold) {
+            final now = DateTime.now();
 
-        if (_goSignalTime == null) {
-          // Movement detected BEFORE GO signal = FLYING
-          _isFlying = true;
-          _flyingEarlyTime = null; // Will be calculated when GO plays
-          
-          // Play buzzer sound for flying
-          if (_player.state != PlayerState.playing) {
-            _player.play(AssetSource('audio/Flying/buzzer.mp3'));
+            if (_goSignalTime == null) {
+              // Movement detected BEFORE GO signal = FLYING
+              _isFlying = true;
+              _flyingEarlyTime = null;
+
+              // Stop main audio player first
+              _player.stop();
+
+              // Stop everything and show FLYING
+              _stopFlyingDetected();
+
+              // Play buzzer sound (already preloaded)
+              _buzzerPlayer.seek(Duration.zero);
+              _buzzerPlayer.resume();
+            } else {
+              // Movement detected AFTER GO signal = Valid reaction
+              _reactionTime =
+                  now.difference(_goSignalTime!).inMilliseconds / 1000.0;
+              _stopReactionMeasurement();
+            }
           }
-          
-          _stopReactionMeasurement();
-        } else {
-          // Movement detected AFTER GO signal = Valid reaction
-          _reactionTime = now.difference(_goSignalTime!).inMilliseconds / 1000.0;
-          _stopReactionMeasurement();
-        }
-      }
-    });
+        });
   }
 
   // Stop reaction measurement (accelerometer)
@@ -987,6 +1040,30 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     }
     // For goal_and_reaction mode, reaction is recorded but goal continues
     // (measurement continues until user triggers stop)
+    if (mounted && !_isInBackground) setState(() {});
+  }
+
+  // Stop everything when flying is detected
+  void _stopFlyingDetected() {
+    _accelerometerSubscription?.cancel();
+    _volumeKeySubscription?.cancel();
+    _hardwareButtonSubscription?.cancel();
+    _stopwatch.stop();
+    _stopwatch.reset();
+
+    // Stop the progress animation and complete it immediately
+    _progressController.stop();
+    _animatedProgress = 1.0;
+
+    // Stop the measurement and show FLYING START
+    _isRunning = false;
+    _isPaused = false;
+    _isMeasuring = false;
+    _isFinished = true;
+    _phaseLabel = 'FLYING'; // Use FLYING as phase label (will be hidden)
+    _showMeasurementResult = true;
+    WakelockPlus.disable();
+
     if (mounted && !_isInBackground) setState(() {});
   }
 
@@ -1047,13 +1124,19 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   }
 
   // Build measurement target option for accordion menu
-  Widget _buildMeasurementTargetOption(String value, String label, IconData icon, bool isDark) {
+  Widget _buildMeasurementTargetOption(
+    String value,
+    String label,
+    IconData icon,
+    bool isDark,
+  ) {
     final isSelected = _measurementTarget == value;
-    final isReactionRelated = value == 'reaction' || value == 'goal_and_reaction';
+    final isReactionRelated =
+        value == 'reaction' || value == 'goal_and_reaction';
     final accentColor = isReactionRelated
         ? const Color(0xFFFF9800)
         : const Color(0xFF00BCD4);
-    
+
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -1065,13 +1148,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected
-              ? accentColor.withOpacity(0.2)
-              : Colors.transparent,
+          color: isSelected ? accentColor.withOpacity(0.2) : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
-          border: isSelected
-              ? Border.all(color: accentColor, width: 1)
-              : null,
+          border: isSelected ? Border.all(color: accentColor, width: 1) : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1142,7 +1221,10 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       } else if (_measurementTarget == 'reaction' && _reactionTime != null) {
         message = 'リアクション ${_reactionTime!.toStringAsFixed(3)}秒 を保存しました';
       } else if (_measuredTime != null) {
-        final adjustedTime = (_measuredTime! - _lagCompensation).clamp(0.0, double.infinity);
+        final adjustedTime = (_measuredTime! - _lagCompensation).clamp(
+          0.0,
+          double.infinity,
+        );
         message = 'タイム ${adjustedTime.toStringAsFixed(2)}秒 を保存しました';
       } else {
         message = '記録を保存しました';
@@ -1180,7 +1262,10 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       } else if (_measurementTarget == 'reaction' && _reactionTime != null) {
         message = 'リアクション ${_reactionTime!.toStringAsFixed(3)}秒 を保存しました';
       } else if (_measuredTime != null) {
-        final adjustedTime = (_measuredTime! - _lagCompensation).clamp(0.0, double.infinity);
+        final adjustedTime = (_measuredTime! - _lagCompensation).clamp(
+          0.0,
+          double.infinity,
+        );
         message = 'タイム ${adjustedTime.toStringAsFixed(2)}秒 を保存しました';
       } else {
         message = '記録を保存しました';
@@ -1896,7 +1981,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     void Function(void Function()) sync,
   ) {
     final isSelected = _measurementTarget == value;
-    final isReactionRelated = value == 'reaction' || value == 'goal_and_reaction';
+    final isReactionRelated =
+        value == 'reaction' || value == 'goal_and_reaction';
     final accentColor = isReactionRelated
         ? const Color(0xFFFF9800)
         : const Color(0xFF00BCD4);
@@ -2136,93 +2222,118 @@ class _StartCallHomePageState extends State<StartCallHomePage>
           ),
           const SizedBox(height: 12),
           if (randomEnabled)
-            Row(
+            Column(
               children: [
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: const Color(0xFF6BCB1F),
-                      inactiveTrackColor: isDark
-                          ? const Color(0xFF2A3543)
-                          : const Color(0xFFD0D0D0),
-                      thumbColor: const Color(0xFF6BCB1F),
-                      overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
-                      trackShape: const RoundedRectSliderTrackShape(),
-                      rangeTrackShape: const RoundedRectRangeSliderTrackShape(),
-                    ),
-                    child: RangeSlider(
-                      values: rangeValues,
+                // Number inputs on top
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildNumberInput(
+                      value: rangeValues.start,
                       min: sliderMin,
-                      max: sliderMax,
-                      divisions: ((sliderMax - sliderMin) * 10).round(),
-                      onChanged: _isRunning
-                          ? null
-                          : (values) {
-                              final roundedStart = (values.start * 10).round() / 10;
-                              final roundedEnd = (values.end * 10).round() / 10;
-                              onRangeChanged(RangeValues(roundedStart, roundedEnd));
-                            },
+                      max: rangeValues.end,
+                      enabled: !_isRunning,
+                      onChanged: (value) {
+                        if (value <= rangeValues.end) {
+                          onRangeChanged(RangeValues(value, rangeValues.end));
+                        }
+                      },
                     ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        '〜',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: isDark ? Colors.white70 : Colors.black54,
+                        ),
+                      ),
+                    ),
+                    _buildNumberInput(
+                      value: rangeValues.end,
+                      min: rangeValues.start,
+                      max: sliderMax,
+                      enabled: !_isRunning,
+                      onChanged: (value) {
+                        if (value >= rangeValues.start) {
+                          onRangeChanged(RangeValues(rangeValues.start, value));
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Slider below
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: const Color(0xFF6BCB1F),
+                    inactiveTrackColor: isDark
+                        ? const Color(0xFF2A3543)
+                        : const Color(0xFFD0D0D0),
+                    thumbColor: const Color(0xFF6BCB1F),
+                    overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
+                    trackShape: const RoundedRectSliderTrackShape(),
+                    rangeTrackShape: const RoundedRectRangeSliderTrackShape(),
                   ),
-                ),
-                _buildNumberInput(
-                  value: rangeValues.start,
-                  min: sliderMin,
-                  max: rangeValues.end,
-                  enabled: !_isRunning,
-                  onChanged: (value) {
-                    if (value <= rangeValues.end) {
-                      onRangeChanged(RangeValues(value, rangeValues.end));
-                    }
-                  },
-                ),
-                _buildNumberInput(
-                  value: rangeValues.end,
-                  min: rangeValues.start,
-                  max: sliderMax,
-                  enabled: !_isRunning,
-                  onChanged: (value) {
-                    if (value >= rangeValues.start) {
-                      onRangeChanged(RangeValues(rangeValues.start, value));
-                    }
-                  },
+                  child: RangeSlider(
+                    values: rangeValues,
+                    min: sliderMin,
+                    max: sliderMax,
+                    divisions: ((sliderMax - sliderMin) * 10).round(),
+                    onChanged: _isRunning
+                        ? null
+                        : (values) {
+                            final roundedStart =
+                                (values.start * 10).round() / 10;
+                            final roundedEnd = (values.end * 10).round() / 10;
+                            onRangeChanged(
+                              RangeValues(roundedStart, roundedEnd),
+                            );
+                          },
+                  ),
                 ),
               ],
             )
           else
-            Row(
+            Column(
               children: [
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: const Color(0xFF6BCB1F),
-                      inactiveTrackColor: isDark
-                          ? const Color(0xFF2A3543)
-                          : const Color(0xFFD0D0D0),
-                      thumbColor: const Color(0xFF6BCB1F),
-                      overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
-                      trackShape: const RoundedRectSliderTrackShape(),
-                    ),
-                    child: Slider(
+                // Number input on top
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildNumberInput(
                       value: fixedValue,
                       min: sliderMin,
                       max: sliderMax,
-                      divisions: ((sliderMax - sliderMin) * 10).round(),
-                      onChanged: _isRunning
-                          ? null
-                          : (value) {
-                              final rounded = (value * 10).round() / 10;
-                              onFixedChanged(rounded);
-                            },
+                      enabled: !_isRunning,
+                      onChanged: onFixedChanged,
                     ),
-                  ),
+                  ],
                 ),
-                _buildNumberInput(
-                  value: fixedValue,
-                  min: sliderMin,
-                  max: sliderMax,
-                  enabled: !_isRunning,
-                  onChanged: onFixedChanged,
+                const SizedBox(height: 8),
+                // Slider below
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: const Color(0xFF6BCB1F),
+                    inactiveTrackColor: isDark
+                        ? const Color(0xFF2A3543)
+                        : const Color(0xFFD0D0D0),
+                    thumbColor: const Color(0xFF6BCB1F),
+                    overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
+                    trackShape: const RoundedRectSliderTrackShape(),
+                  ),
+                  child: Slider(
+                    value: fixedValue,
+                    min: sliderMin,
+                    max: sliderMax,
+                    divisions: ((sliderMax - sliderMin) * 10).round(),
+                    onChanged: _isRunning
+                        ? null
+                        : (value) {
+                            final rounded = (value * 10).round() / 10;
+                            onFixedChanged(rounded);
+                          },
+                  ),
                 ),
               ],
             ),
@@ -2353,7 +2464,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
 
     if (_isMeasuring) {
       // Show elapsed time during measurement (for goal modes)
-      if (_measurementTarget == 'goal' || _measurementTarget == 'goal_and_reaction') {
+      if (_measurementTarget == 'goal' ||
+          _measurementTarget == 'goal_and_reaction') {
         final elapsed = _stopwatch.elapsedMilliseconds / 1000.0;
         displayText = elapsed.toStringAsFixed(2);
       } else {
@@ -2368,7 +2480,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       // Check for flying first
       if (_isFlying) {
         showFlying = true;
-        displayText = 'FLYING';
+        displayText = 'FLYING START';
       } else if (_measurementTarget == 'goal' && _measuredTime != null) {
         // Goal only mode
         final adjustedTime = (_measuredTime! - _lagCompensation).clamp(
@@ -2414,9 +2526,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     }
 
     // Check if we should enable full-screen tap to stop (only for goal modes with tap trigger)
-    final enableFullScreenTap = _isMeasuring &&
+    final enableFullScreenTap =
+        _isMeasuring &&
         _triggerMethod == 'tap' &&
-        (_measurementTarget == 'goal' || _measurementTarget == 'goal_and_reaction');
+        (_measurementTarget == 'goal' ||
+            _measurementTarget == 'goal_and_reaction');
 
     Widget body = SafeArea(
       child: OrientationBuilder(
@@ -2424,10 +2538,18 @@ class _StartCallHomePageState extends State<StartCallHomePage>
           final isLandscape = orientation == Orientation.landscape;
 
           return isLandscape
-              ? _buildLandscapeLayout(displayText, showCountdown,
-                  reactionText: reactionDisplayText, isFlying: showFlying)
-              : _buildPortraitLayout(displayText, showCountdown,
-                  reactionText: reactionDisplayText, isFlying: showFlying);
+              ? _buildLandscapeLayout(
+                  displayText,
+                  showCountdown,
+                  reactionText: reactionDisplayText,
+                  isFlying: showFlying,
+                )
+              : _buildPortraitLayout(
+                  displayText,
+                  showCountdown,
+                  reactionText: reactionDisplayText,
+                  isFlying: showFlying,
+                );
         },
       ),
     );
@@ -2447,8 +2569,12 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     );
   }
 
-  Widget _buildPortraitLayout(String countdownText, bool showCountdown,
-      {String? reactionText, bool isFlying = false}) {
+  Widget _buildPortraitLayout(
+    String countdownText,
+    bool showCountdown, {
+    String? reactionText,
+    bool isFlying = false,
+  }) {
     final isDark = themeNotifier.value;
     return Column(
       children: [
@@ -2580,8 +2706,12 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     );
   }
 
-  Widget _buildLandscapeLayout(String countdownText, bool showCountdown,
-      {String? reactionText, bool isFlying = false}) {
+  Widget _buildLandscapeLayout(
+    String countdownText,
+    bool showCountdown, {
+    String? reactionText,
+    bool isFlying = false,
+  }) {
     final isDark = themeNotifier.value;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -2823,22 +2953,27 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         final progress = _animatedProgress;
 
         // Interpolate colors based on progress (light -> dark as countdown approaches 0)
-        // For 'Go', 'Measuring', 'FINISH', 'FLYING' phases, always use full intensity (progress = 1.0)
+        // For 'Go', 'Measuring', 'FINISH', 'FLYING', 'FLYING START' phases, always use full intensity (progress = 1.0)
         final effectiveProgress =
             (_phaseLabel == 'Go' ||
                 _phaseLabel == 'Measuring' ||
                 _phaseLabel == 'FINISH' ||
-                _phaseLabel == 'FLYING')
+                _phaseLabel == 'FLYING' ||
+                _phaseLabel == 'FLYING START')
             ? 1.0
             : progress;
 
         // Use red color for flying
-        final progressColor = isFlying
+        final isFlyingPhase = isFlying || _phaseLabel == 'FLYING START';
+        final progressColor = isFlyingPhase
             ? const Color(0xFFE53935)
             : PhaseColors.getInterpolatedColor(_phaseLabel, effectiveProgress);
-        final secondaryColor = isFlying
+        final secondaryColor = isFlyingPhase
             ? const Color(0xFFFF5252)
-            : PhaseColors.getInterpolatedSecondaryColor(_phaseLabel, effectiveProgress);
+            : PhaseColors.getInterpolatedSecondaryColor(
+                _phaseLabel,
+                effectiveProgress,
+              );
 
         // Fixed height for phase label to prevent size changes between phases
         final labelHeight = isLandscape
@@ -2890,25 +3025,27 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   // Phase label with glow - fixed height to prevent size changes
-                  SizedBox(
-                    height: labelHeight,
-                    child: GestureDetector(
-                      onTap: _handleTitleTap,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: _buildGlowingText(
-                          _phaseLabel,
-                          GoogleFonts.bebasNeue(
-                            fontSize: labelFontSize,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 2,
-                            color: isDark ? Colors.white : Colors.black87,
+                  // Hide label when flying (show only FLYING START in countdown area)
+                  if (!isFlying && _phaseLabel != 'FLYING')
+                    SizedBox(
+                      height: labelHeight,
+                      child: GestureDetector(
+                        onTap: _handleTitleTap,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: _buildGlowingText(
+                            _phaseLabel,
+                            GoogleFonts.bebasNeue(
+                              fontSize: labelFontSize,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 2,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                            glowColor: progressColor.withOpacity(0.3),
                           ),
-                          glowColor: progressColor.withOpacity(0.3),
                         ),
                       ),
                     ),
-                  ),
                   if (showCountdown) ...[
                     SizedBox(
                       height: isLandscape ? 4 : (isSmallScreen ? 8 : 10),
@@ -3016,8 +3153,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         List<Widget> buttons;
 
         if (isShowingResult) {
-          if (_autoSavedResult) {
-            // Auto-saved result: RESET only (full width)
+          if (_autoSavedResult || _isFlying) {
+            // Auto-saved result or Flying: RESET only (full width)
             buttons = [
               Expanded(
                 child: _buildGlowButton(
@@ -4684,8 +4821,8 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                 final reactionTime = log['reactionTime'] != null
                                     ? (log['reactionTime'] as num).toDouble()
                                     : null;
-                                final tags = (log['tags'] as List?)
-                                        ?.cast<String>() ??
+                                final tags =
+                                    (log['tags'] as List?)?.cast<String>() ??
                                     ['ゴール']; // Default for old logs
                                 final isFlying = log['isFlying'] == true;
                                 final date = DateTime.parse(
@@ -4833,24 +4970,24 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                                         tag == 'リアクション';
                                                     return Container(
                                                       padding:
-                                                          const EdgeInsets
-                                                              .symmetric(
-                                                        horizontal: 6,
-                                                        vertical: 2,
-                                                      ),
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 6,
+                                                            vertical: 2,
+                                                          ),
                                                       decoration: BoxDecoration(
                                                         color: isReaction
                                                             ? const Color(
-                                                                    0xFFFF9800)
-                                                                .withOpacity(
-                                                                    0.2)
+                                                                0xFFFF9800,
+                                                              ).withOpacity(0.2)
                                                             : const Color(
-                                                                    0xFF00BCD4)
-                                                                .withOpacity(
-                                                                    0.2),
+                                                                0xFF00BCD4,
+                                                              ).withOpacity(
+                                                                0.2,
+                                                              ),
                                                         borderRadius:
-                                                            BorderRadius
-                                                                .circular(4),
+                                                            BorderRadius.circular(
+                                                              4,
+                                                            ),
                                                       ),
                                                       child: Text(
                                                         tag,
@@ -4858,9 +4995,11 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                                           fontSize: 10,
                                                           color: isReaction
                                                               ? const Color(
-                                                                  0xFFFF9800)
+                                                                  0xFFFF9800,
+                                                                )
                                                               : const Color(
-                                                                  0xFF00BCD4),
+                                                                  0xFF00BCD4,
+                                                                ),
                                                           fontWeight:
                                                               FontWeight.w600,
                                                         ),
@@ -4899,7 +5038,8 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                                 !isFlying)
                                               Padding(
                                                 padding: const EdgeInsets.only(
-                                                    top: 4),
+                                                  top: 4,
+                                                ),
                                                 child: Text(
                                                   '${reactionTime.toStringAsFixed(3)}s',
                                                   style: const TextStyle(
@@ -5051,7 +5191,9 @@ class _LogEditPageState extends State<LogEditPage> {
                           tag,
                           style: TextStyle(
                             fontSize: 12,
-                            color: isGoal ? Colors.cyan.shade900 : Colors.orange.shade900,
+                            color: isGoal
+                                ? Colors.cyan.shade900
+                                : Colors.orange.shade900,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -5073,7 +5215,10 @@ class _LogEditPageState extends State<LogEditPage> {
                 if (widget.isFlying)
                   Center(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.red.withAlpha(30),
                         borderRadius: BorderRadius.circular(8),
@@ -5096,7 +5241,8 @@ class _LogEditPageState extends State<LogEditPage> {
                   Center(
                     child: Column(
                       children: [
-                        if (widget.tags.contains('リアクション') && widget.tags.contains('ゴール'))
+                        if (widget.tags.contains('リアクション') &&
+                            widget.tags.contains('ゴール'))
                           Text(
                             'ゴール',
                             style: TextStyle(
@@ -5121,7 +5267,8 @@ class _LogEditPageState extends State<LogEditPage> {
                     child: Column(
                       children: [
                         if (widget.time != null) const SizedBox(height: 8),
-                        if (widget.tags.contains('リアクション') && widget.tags.contains('ゴール'))
+                        if (widget.tags.contains('リアクション') &&
+                            widget.tags.contains('ゴール'))
                           Text(
                             'リアクション',
                             style: TextStyle(
@@ -5458,7 +5605,8 @@ class _SettingsPageState extends State<SettingsPage> {
     bool isDark,
   ) {
     final isSelected = _measurementTarget == value;
-    final isReactionRelated = value == 'reaction' || value == 'goal_and_reaction';
+    final isReactionRelated =
+        value == 'reaction' || value == 'goal_and_reaction';
     final accentColor = isReactionRelated
         ? const Color(0xFFFF9800)
         : const Color(0xFF00BCD4);
@@ -5517,7 +5665,8 @@ class _SettingsPageState extends State<SettingsPage> {
     bool isDark,
   ) {
     final isSelected = _measurementTarget == value;
-    final isReactionRelated = value == 'reaction' || value == 'goal_and_reaction';
+    final isReactionRelated =
+        value == 'reaction' || value == 'goal_and_reaction';
     final accentColor = isReactionRelated
         ? const Color(0xFFFF9800)
         : const Color(0xFF00BCD4);
@@ -5566,12 +5715,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
             ),
-            if (isSelected)
-              Icon(
-                Icons.check,
-                size: 20,
-                color: accentColor,
-              ),
+            if (isSelected) Icon(Icons.check, size: 20, color: accentColor),
           ],
         ),
       ),
@@ -5690,79 +5834,101 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const SizedBox(height: 12),
           if (randomEnabled)
-            Row(
+            Column(
               children: [
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: const Color(0xFF6BCB1F),
-                      inactiveTrackColor: isDark
-                          ? const Color(0xFF2A3543)
-                          : const Color(0xFFD0D0D0),
-                      thumbColor: const Color(0xFF6BCB1F),
-                      overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
-                    ),
-                    child: RangeSlider(
-                      values: rangeValues,
+                // Number inputs on top
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildNumberInput(
+                      value: rangeValues.start,
                       min: sliderMin,
-                      max: sliderMax,
-                      divisions: ((sliderMax - sliderMin) * 10).round(),
-                      onChanged: widget.isRunning ? null : onRangeChanged,
+                      max: rangeValues.end,
+                      enabled: !widget.isRunning,
+                      onChanged: (value) {
+                        if (value <= rangeValues.end) {
+                          onRangeChanged(RangeValues(value, rangeValues.end));
+                        }
+                      },
                     ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        '〜',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: isDark ? Colors.white70 : Colors.black54,
+                        ),
+                      ),
+                    ),
+                    _buildNumberInput(
+                      value: rangeValues.end,
+                      min: rangeValues.start,
+                      max: sliderMax,
+                      enabled: !widget.isRunning,
+                      onChanged: (value) {
+                        if (value >= rangeValues.start) {
+                          onRangeChanged(RangeValues(rangeValues.start, value));
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Slider below
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: const Color(0xFF6BCB1F),
+                    inactiveTrackColor: isDark
+                        ? const Color(0xFF2A3543)
+                        : const Color(0xFFD0D0D0),
+                    thumbColor: const Color(0xFF6BCB1F),
+                    overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
                   ),
-                ),
-                _buildNumberInput(
-                  value: rangeValues.start,
-                  min: sliderMin,
-                  max: rangeValues.end,
-                  enabled: !widget.isRunning,
-                  onChanged: (value) {
-                    if (value <= rangeValues.end) {
-                      onRangeChanged(RangeValues(value, rangeValues.end));
-                    }
-                  },
-                ),
-                _buildNumberInput(
-                  value: rangeValues.end,
-                  min: rangeValues.start,
-                  max: sliderMax,
-                  enabled: !widget.isRunning,
-                  onChanged: (value) {
-                    if (value >= rangeValues.start) {
-                      onRangeChanged(RangeValues(rangeValues.start, value));
-                    }
-                  },
+                  child: RangeSlider(
+                    values: rangeValues,
+                    min: sliderMin,
+                    max: sliderMax,
+                    divisions: ((sliderMax - sliderMin) * 10).round(),
+                    onChanged: widget.isRunning ? null : onRangeChanged,
+                  ),
                 ),
               ],
             )
           else
-            Row(
+            Column(
               children: [
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: const Color(0xFF6BCB1F),
-                      inactiveTrackColor: isDark
-                          ? const Color(0xFF2A3543)
-                          : const Color(0xFFD0D0D0),
-                      thumbColor: const Color(0xFF6BCB1F),
-                      overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
-                    ),
-                    child: Slider(
+                // Number input on top
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildNumberInput(
                       value: fixedValue,
                       min: sliderMin,
                       max: sliderMax,
-                      divisions: ((sliderMax - sliderMin) * 10).round(),
-                      onChanged: widget.isRunning ? null : onFixedChanged,
+                      enabled: !widget.isRunning,
+                      onChanged: onFixedChanged,
                     ),
-                  ),
+                  ],
                 ),
-                _buildNumberInput(
-                  value: fixedValue,
-                  min: sliderMin,
-                  max: sliderMax,
-                  enabled: !widget.isRunning,
-                  onChanged: onFixedChanged,
+                const SizedBox(height: 8),
+                // Slider below
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: const Color(0xFF6BCB1F),
+                    inactiveTrackColor: isDark
+                        ? const Color(0xFF2A3543)
+                        : const Color(0xFFD0D0D0),
+                    thumbColor: const Color(0xFF6BCB1F),
+                    overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
+                  ),
+                  child: Slider(
+                    value: fixedValue,
+                    min: sliderMin,
+                    max: sliderMax,
+                    divisions: ((sliderMax - sliderMin) * 10).round(),
+                    onChanged: widget.isRunning ? null : onFixedChanged,
+                  ),
                 ),
               ],
             ),
@@ -6198,14 +6364,20 @@ class _SettingsPageState extends State<SettingsPage> {
                                 widget.onMeasurementTargetChanged(value);
                               },
                               offset: const Offset(0, 40),
-                              color: isDark ? const Color(0xFF1A2332) : Colors.white,
+                              color: isDark
+                                  ? const Color(0xFF1A2332)
+                                  : Colors.white,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               itemBuilder: (context) {
                                 final menuIsDark = themeNotifier.value;
-                                final defaultIconColor = menuIsDark ? Colors.white70 : Colors.black54;
-                                final defaultTextColor = menuIsDark ? Colors.white : Colors.black87;
+                                final defaultIconColor = menuIsDark
+                                    ? Colors.white70
+                                    : Colors.black54;
+                                final defaultTextColor = menuIsDark
+                                    ? Colors.white
+                                    : Colors.black87;
                                 return [
                                   PopupMenuItem<String>(
                                     value: 'goal',
@@ -6222,7 +6394,8 @@ class _SettingsPageState extends State<SettingsPage> {
                                         Text(
                                           'ゴール',
                                           style: TextStyle(
-                                            fontWeight: _measurementTarget == 'goal'
+                                            fontWeight:
+                                                _measurementTarget == 'goal'
                                                 ? FontWeight.w600
                                                 : FontWeight.normal,
                                             color: _measurementTarget == 'goal'
@@ -6240,7 +6413,8 @@ class _SettingsPageState extends State<SettingsPage> {
                                         Icon(
                                           Icons.flash_on,
                                           size: 18,
-                                          color: _measurementTarget == 'reaction'
+                                          color:
+                                              _measurementTarget == 'reaction'
                                               ? const Color(0xFFFF9800)
                                               : defaultIconColor,
                                         ),
@@ -6248,10 +6422,12 @@ class _SettingsPageState extends State<SettingsPage> {
                                         Text(
                                           'リアクション',
                                           style: TextStyle(
-                                            fontWeight: _measurementTarget == 'reaction'
+                                            fontWeight:
+                                                _measurementTarget == 'reaction'
                                                 ? FontWeight.w600
                                                 : FontWeight.normal,
-                                            color: _measurementTarget == 'reaction'
+                                            color:
+                                                _measurementTarget == 'reaction'
                                                 ? const Color(0xFFFF9800)
                                                 : defaultTextColor,
                                           ),
@@ -6266,7 +6442,9 @@ class _SettingsPageState extends State<SettingsPage> {
                                         Icon(
                                           Icons.timer,
                                           size: 18,
-                                          color: _measurementTarget == 'goal_and_reaction'
+                                          color:
+                                              _measurementTarget ==
+                                                  'goal_and_reaction'
                                               ? const Color(0xFF9C27B0)
                                               : defaultIconColor,
                                         ),
@@ -6274,10 +6452,14 @@ class _SettingsPageState extends State<SettingsPage> {
                                         Text(
                                           'ゴール&リアクション',
                                           style: TextStyle(
-                                            fontWeight: _measurementTarget == 'goal_and_reaction'
+                                            fontWeight:
+                                                _measurementTarget ==
+                                                    'goal_and_reaction'
                                                 ? FontWeight.w600
                                                 : FontWeight.normal,
-                                            color: _measurementTarget == 'goal_and_reaction'
+                                            color:
+                                                _measurementTarget ==
+                                                    'goal_and_reaction'
                                                 ? const Color(0xFF9C27B0)
                                                 : defaultTextColor,
                                           ),
@@ -6289,11 +6471,12 @@ class _SettingsPageState extends State<SettingsPage> {
                               },
                               child: Builder(
                                 builder: (context) {
-                                  final accentColor = _measurementTarget == 'goal'
+                                  final accentColor =
+                                      _measurementTarget == 'goal'
                                       ? const Color(0xFF00BCD4)
                                       : (_measurementTarget == 'reaction'
-                                          ? const Color(0xFFFF9800)
-                                          : const Color(0xFF9C27B0));
+                                            ? const Color(0xFFFF9800)
+                                            : const Color(0xFF9C27B0));
                                   return Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 12,
@@ -6315,9 +6498,10 @@ class _SettingsPageState extends State<SettingsPage> {
                                         Icon(
                                           _measurementTarget == 'goal'
                                               ? Icons.flag
-                                              : (_measurementTarget == 'reaction'
-                                                  ? Icons.flash_on
-                                                  : Icons.timer),
+                                              : (_measurementTarget ==
+                                                        'reaction'
+                                                    ? Icons.flash_on
+                                                    : Icons.timer),
                                           size: 18,
                                           color: accentColor,
                                         ),
@@ -6325,9 +6509,10 @@ class _SettingsPageState extends State<SettingsPage> {
                                         Text(
                                           _measurementTarget == 'goal'
                                               ? 'ゴール'
-                                              : (_measurementTarget == 'reaction'
-                                                  ? 'リアクション'
-                                                  : 'ゴール&リアクション'),
+                                              : (_measurementTarget ==
+                                                        'reaction'
+                                                    ? 'リアクション'
+                                                    : 'ゴール&リアクション'),
                                           style: TextStyle(
                                             fontSize: 14,
                                             fontWeight: FontWeight.w600,
@@ -6404,8 +6589,9 @@ class _SettingsPageState extends State<SettingsPage> {
                                         ? const Color(0xFF2A3543)
                                         : const Color(0xFFE0E0E0),
                                     thumbColor: const Color(0xFFFF9800),
-                                    overlayColor: const Color(0xFFFF9800)
-                                        .withOpacity(0.2),
+                                    overlayColor: const Color(
+                                      0xFFFF9800,
+                                    ).withOpacity(0.2),
                                   ),
                                   child: Slider(
                                     value: _reactionThreshold,
@@ -6413,7 +6599,9 @@ class _SettingsPageState extends State<SettingsPage> {
                                     max: 30.0,
                                     divisions: 50,
                                     onChanged: (value) {
-                                      setState(() => _reactionThreshold = value);
+                                      setState(
+                                        () => _reactionThreshold = value,
+                                      );
                                       widget.onReactionThresholdChanged(value);
                                     },
                                   ),
@@ -6442,7 +6630,9 @@ class _SettingsPageState extends State<SettingsPage> {
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w500,
-                                  color: isDark ? Colors.white70 : Colors.black54,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.black54,
                                 ),
                               ),
                               const Spacer(),

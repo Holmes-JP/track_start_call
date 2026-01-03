@@ -12,7 +12,8 @@
       "Bash(/mnt/c/src/flutter/bin/cache/dart-sdk/bin/dart.exe analyze:*)",
       "Bash(cat:*)",
       "Bash(cmd.exe /c \"cd /d D:\\\\user\\\\HolmesJP\\\\Desktop\\\\tetete\\\\track_start_call && C:\\\\src\\\\flutter\\\\bin\\\\flutter.bat analyze lib\\\\main.dart\")",
-      "Bash(cmd.exe /c \"cd /d D:\\\\user\\\\HolmesJP\\\\Desktop\\\\tetete\\\\track_start_call && C:\\\\src\\\\flutter\\\\bin\\\\flutter.bat analyze lib\\\\main.dart 2>&1\")"
+      "Bash(cmd.exe /c \"cd /d D:\\\\user\\\\HolmesJP\\\\Desktop\\\\tetete\\\\track_start_call && C:\\\\src\\\\flutter\\\\bin\\\\flutter.bat analyze lib\\\\main.dart 2>&1\")",
+      "Bash(cmd.exe /c \"C:\\\\src\\\\flutter\\\\bin\\\\flutter.bat analyze lib\\\\main.dart\")"
     ]
   }
 }
