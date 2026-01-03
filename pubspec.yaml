@@ -40,6 +40,7 @@ dependencies:
   url_launcher: ^6.2.5
   wakelock_plus: ^1.2.8
   hardware_button_listener: ^0.0.1
+  sensors_plus: ^5.0.1
 
 dev_dependencies:
   flutter_test:
@@ -78,6 +79,7 @@ flutter:
     - assets/audio/On Your Marks/
     - assets/audio/Set/
     - assets/audio/Go/
+    - assets/audio/Flying/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
