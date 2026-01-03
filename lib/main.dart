@@ -890,7 +890,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     logs.add({
       'time': adjustedTime,
       'date': DateTime.now().toIso8601String(),
-      'title': '無題',
+      'title': '',
       'memo': '',
     });
 
@@ -924,7 +924,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     logs.add({
       'time': adjustedTime,
       'date': DateTime.now().toIso8601String(),
-      'title': '無題',
+      'title': '',
       'memo': '',
     });
 
@@ -982,6 +982,56 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   Future<void> _clearAllTimeLogs() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('time_logs', '[]');
+  }
+
+  // Debug: Add 50 random test records
+  Future<void> _addTestRecords() async {
+    final prefs = await SharedPreferences.getInstance();
+    final logsJson = prefs.getString('time_logs') ?? '[]';
+    final logs = List<Map<String, dynamic>>.from(jsonDecode(logsJson));
+
+    final now = DateTime.now();
+    final random = Random();
+
+    for (int i = 0; i < 50; i++) {
+      // Random date between 2 years ago and now
+      final daysAgo = random.nextInt(730); // 0-730 days ago (2 years)
+      final date = now.subtract(
+        Duration(
+          days: daysAgo,
+          hours: random.nextInt(24),
+          minutes: random.nextInt(60),
+          seconds: random.nextInt(60),
+        ),
+      );
+
+      // Random time between 8.0 and 15.0 seconds
+      final time = 8.0 + random.nextDouble() * 7.0;
+
+      logs.add({
+        'time': double.parse(time.toStringAsFixed(2)),
+        'date': date.toIso8601String(),
+        'title': '[テスト用] 記録 ${i + 1}',
+        'memo': 'テスト用の記録です',
+      });
+    }
+
+    await prefs.setString('time_logs', jsonEncode(logs));
+  }
+
+  // Debug: Delete all test records
+  Future<void> _deleteTestRecords() async {
+    final prefs = await SharedPreferences.getInstance();
+    final logsJson = prefs.getString('time_logs') ?? '[]';
+    final logs = List<Map<String, dynamic>>.from(jsonDecode(logsJson));
+
+    // Remove all records with title starting with "[テスト用]"
+    logs.removeWhere((log) {
+      final title = log['title'] as String? ?? '';
+      return title.startsWith('[テスト用]');
+    });
+
+    await prefs.setString('time_logs', jsonEncode(logs));
   }
 
   Future<void> _showLogEditDialog(
@@ -1748,8 +1798,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                                 if (lagFocusNode.hasFocus) {
                                                   lagFocusNode.unfocus();
                                                 }
-                                                lagController.text =
-                                                    value.toStringAsFixed(2);
+                                                lagController.text = value
+                                                    .toStringAsFixed(2);
                                               },
                                             ),
                                           ),
@@ -1829,11 +1879,14 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                                 // Empty input: use current slider value
                                                 newValue = _lagCompensation;
                                               } else {
-                                                final parsed =
-                                                    double.tryParse(trimmed);
+                                                final parsed = double.tryParse(
+                                                  trimmed,
+                                                );
                                                 if (parsed != null) {
-                                                  newValue =
-                                                      parsed.clamp(0.0, 1.0);
+                                                  newValue = parsed.clamp(
+                                                    0.0,
+                                                    1.0,
+                                                  );
                                                 } else {
                                                   // Invalid input: use current value
                                                   newValue = _lagCompensation;
@@ -1846,8 +1899,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                                   newValue,
                                                 );
                                               });
-                                              lagController.text =
-                                                  newValue.toStringAsFixed(2);
+                                              lagController.text = newValue
+                                                  .toStringAsFixed(2);
                                             },
                                           ),
                                         ),
@@ -1861,7 +1914,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                           color: const Color(
                                             0xFF00BCD4,
                                           ).withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                           border: Border.all(
                                             color: const Color(
                                               0xFF00BCD4,
@@ -2152,6 +2207,137 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                                         ? Colors.white70
                                         : Colors.black54,
                                     size: 28,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          // Debug section header
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4, bottom: 8),
+                            child: Text(
+                              'デバッグ',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white54 : Colors.black45,
+                              ),
+                            ),
+                          ),
+                          // Add test data button
+                          GestureDetector(
+                            onTap: () async {
+                              await _addTestRecords();
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('50個のテスト用記録を追加しました'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 16,
+                                horizontal: 20,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF141B26)
+                                    : Colors.white,
+                                borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(16),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: isDark
+                                        ? const Color(0xFF2A3543)
+                                        : const Color(0xFFE0E0E0),
+                                    spreadRadius: 1,
+                                    blurRadius: 0,
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.add_circle_outline,
+                                    color: Colors.orange,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Text(
+                                      'テスト用の記録を追加（50件）',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
+                                        color: isDark
+                                            ? Colors.white
+                                            : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          // Delete test data button
+                          GestureDetector(
+                            onTap: () async {
+                              await _deleteTestRecords();
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('テスト用の記録を削除しました'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 16,
+                                horizontal: 20,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF141B26)
+                                    : Colors.white,
+                                borderRadius: const BorderRadius.vertical(
+                                  bottom: Radius.circular(16),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: isDark
+                                        ? const Color(0xFF2A3543)
+                                        : const Color(0xFFE0E0E0),
+                                    spreadRadius: 1,
+                                    blurRadius: 0,
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.red,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Text(
+                                      'テスト用の記録を消す',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
+                                        color: isDark
+                                            ? Colors.white
+                                            : Colors.black87,
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -3773,6 +3959,8 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
   bool _isSelectionMode = false;
   Set<int> _selectedIndices = {};
   late String _logSortOrder;
+  Set<DateTime> _filterDates = {};
+  bool _isFilteredByCalendar = false;
 
   final sortLabels = <String, String>{
     'time_asc': '秒数（昇順）',
@@ -3798,9 +3986,27 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
     }
   }
 
+  // Get all unique dates that have logs (date only, no time)
+  Set<DateTime> get _logDates {
+    return _logs.map((log) {
+      final date = DateTime.parse(log['date'] as String);
+      return DateTime(date.year, date.month, date.day);
+    }).toSet();
+  }
+
   List<int> get _sortedIndices {
-    final sortedIndices = List<int>.generate(_logs.length, (i) => i);
-    sortedIndices.sort((a, b) {
+    var indices = List<int>.generate(_logs.length, (i) => i);
+
+    // Apply calendar filter if active
+    if (_isFilteredByCalendar && _filterDates.isNotEmpty) {
+      indices = indices.where((i) {
+        final date = DateTime.parse(_logs[i]['date'] as String);
+        final dateOnly = DateTime(date.year, date.month, date.day);
+        return _filterDates.contains(dateOnly);
+      }).toList();
+    }
+
+    indices.sort((a, b) {
       final timeA = (_logs[a]['time'] as num).toDouble();
       final timeB = (_logs[b]['time'] as num).toDouble();
       final dateA = DateTime.parse(_logs[a]['date'] as String);
@@ -3821,7 +4027,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
           return cmp != 0 ? cmp : timeB.compareTo(timeA);
       }
     });
-    return sortedIndices;
+    return indices;
   }
 
   Future<void> _deleteSelectedLogs() async {
@@ -3886,6 +4092,576 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
     }
   }
 
+  Future<void> _showCalendarDialog() async {
+    final logDates = _logDates;
+    if (logDates.isEmpty) return;
+
+    // Find oldest and newest log dates
+    DateTime? oldestLogDate;
+    DateTime? newestLogDate;
+    for (final date in logDates) {
+      if (oldestLogDate == null || date.isBefore(oldestLogDate)) {
+        oldestLogDate = date;
+      }
+      if (newestLogDate == null || date.isAfter(newestLogDate)) {
+        newestLogDate = date;
+      }
+    }
+    final now = DateTime.now();
+    final minYear = oldestLogDate?.year ?? now.year;
+    final maxYear = now.year;
+    final maxMonth = now.month;
+
+    Set<DateTime> selectedDates = Set.from(_filterDates);
+    DateTime displayedMonth = DateTime.now();
+
+    // Picker mode: 'calendar', 'year', 'month'
+    String pickerMode = 'calendar';
+
+    final result = await showDialog<Set<DateTime>>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            final isDark = themeNotifier.value;
+
+            // Check if can navigate to previous/next month
+            bool canGoPrevMonth() {
+              final prevMonth = DateTime(
+                displayedMonth.year,
+                displayedMonth.month - 1,
+              );
+              return prevMonth.year > minYear ||
+                  (prevMonth.year == minYear &&
+                      prevMonth.month >= (oldestLogDate?.month ?? 1));
+            }
+
+            bool canGoNextMonth() {
+              final nextMonth = DateTime(
+                displayedMonth.year,
+                displayedMonth.month + 1,
+              );
+              return nextMonth.year < maxYear ||
+                  (nextMonth.year == maxYear && nextMonth.month <= maxMonth);
+            }
+
+            // Build year picker
+            Widget buildYearPicker() {
+              final years = List.generate(
+                maxYear - minYear + 1,
+                (i) => minYear + i,
+              );
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                    child: Text(
+                      '年を選択',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white70 : Colors.black54,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: GridView.builder(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                            childAspectRatio: 2.0,
+                          ),
+                      itemCount: years.length,
+                      itemBuilder: (context, index) {
+                        final year = years[index];
+                        final isSelected = year == displayedMonth.year;
+                        return GestureDetector(
+                          onTap: () {
+                            dialogSetState(() {
+                              // When selecting a year, adjust month if needed
+                              int newMonth = displayedMonth.month;
+                              if (year == maxYear && newMonth > maxMonth) {
+                                newMonth = maxMonth;
+                              }
+                              displayedMonth = DateTime(year, newMonth);
+                              pickerMode = 'month';
+                            });
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(0xFF2196F3)
+                                  : (isDark
+                                        ? const Color(0xFF2A3543)
+                                        : const Color(0xFFF0F0F0)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              '$year年',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? Colors.white
+                                    : (isDark ? Colors.white : Colors.black87),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            // Build month picker
+            Widget buildMonthPicker() {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            dialogSetState(() {
+                              pickerMode = 'year';
+                            });
+                          },
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.chevron_left,
+                                size: 20,
+                                color: isDark ? Colors.white70 : Colors.black54,
+                              ),
+                              Text(
+                                '${displayedMonth.year}年',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF2196F3),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '月を選択',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white70 : Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: GridView.builder(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 4,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                            childAspectRatio: 1.5,
+                          ),
+                      itemCount: 12,
+                      itemBuilder: (context, index) {
+                        final month = index + 1;
+                        final isSelected = month == displayedMonth.month;
+                        // Disable future months in current year
+                        final isDisabled =
+                            displayedMonth.year == maxYear && month > maxMonth;
+                        // Disable months before oldest log in the oldest year
+                        final isBeforeOldest =
+                            displayedMonth.year == minYear &&
+                            month < (oldestLogDate?.month ?? 1);
+                        final isAvailable = !isDisabled && !isBeforeOldest;
+
+                        return GestureDetector(
+                          onTap: isAvailable
+                              ? () {
+                                  dialogSetState(() {
+                                    displayedMonth = DateTime(
+                                      displayedMonth.year,
+                                      month,
+                                    );
+                                    pickerMode = 'calendar';
+                                  });
+                                }
+                              : null,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(0xFF2196F3)
+                                  : (isAvailable
+                                        ? (isDark
+                                              ? const Color(0xFF2A3543)
+                                              : const Color(0xFFF0F0F0))
+                                        : (isDark
+                                              ? const Color(0xFF1A1A1A)
+                                              : const Color(0xFFE0E0E0))),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              '$month月',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? Colors.white
+                                    : (isAvailable
+                                          ? (isDark
+                                                ? Colors.white
+                                                : Colors.black87)
+                                          : (isDark
+                                                ? Colors.white38
+                                                : Colors.black26)),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            // Build calendar grid
+            Widget buildCalendar() {
+              final firstDayOfMonth = DateTime(
+                displayedMonth.year,
+                displayedMonth.month,
+                1,
+              );
+              final lastDayOfMonth = DateTime(
+                displayedMonth.year,
+                displayedMonth.month + 1,
+                0,
+              );
+              final startWeekday = firstDayOfMonth.weekday % 7;
+              final daysInMonth = lastDayOfMonth.day;
+
+              final days = <Widget>[];
+
+              // Weekday headers
+              const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+              for (var i = 0; i < 7; i++) {
+                days.add(
+                  Center(
+                    child: Text(
+                      weekdays[i],
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: i == 0
+                            ? Colors.red
+                            : (i == 6
+                                  ? Colors.blue
+                                  : (isDark ? Colors.white70 : Colors.black54)),
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              // Empty cells before first day
+              for (var i = 0; i < startWeekday; i++) {
+                days.add(const SizedBox());
+              }
+
+              // Day cells
+              for (var day = 1; day <= daysInMonth; day++) {
+                final date = DateTime(
+                  displayedMonth.year,
+                  displayedMonth.month,
+                  day,
+                );
+                final hasLog = logDates.contains(date);
+                final isSelected = selectedDates.contains(date);
+                final weekday = date.weekday;
+                final isToday =
+                    DateTime.now().year == date.year &&
+                    DateTime.now().month == date.month &&
+                    DateTime.now().day == date.day;
+                // Disable future dates
+                final isFutureDate = date.isAfter(now);
+
+                days.add(
+                  GestureDetector(
+                    onTap: isFutureDate
+                        ? null
+                        : () {
+                            dialogSetState(() {
+                              if (isSelected) {
+                                selectedDates.remove(date);
+                              } else {
+                                selectedDates.add(date);
+                              }
+                            });
+                          },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFF2196F3)
+                            : (isToday
+                                  ? (isDark
+                                        ? const Color(0xFF2A3543)
+                                        : const Color(0xFFE0E0E0))
+                                  : Colors.transparent),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Text(
+                            '$day',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: hasLog
+                                  ? FontWeight.w700
+                                  : FontWeight.normal,
+                              color: isFutureDate
+                                  ? (isDark ? Colors.white24 : Colors.black26)
+                                  : (isSelected
+                                        ? Colors.white
+                                        : (weekday == 7
+                                              ? Colors.red
+                                              : (weekday == 6
+                                                    ? Colors.blue
+                                                    : (isDark
+                                                          ? Colors.white
+                                                          : Colors.black87)))),
+                            ),
+                          ),
+                          // Blue dot for days with logs
+                          if (hasLog && !isSelected)
+                            Positioned(
+                              bottom: 4,
+                              child: Container(
+                                width: 5,
+                                height: 5,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF2196F3),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              return Column(
+                children: [
+                  // Month navigation with tappable year/month
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        onPressed: canGoPrevMonth()
+                            ? () {
+                                dialogSetState(() {
+                                  displayedMonth = DateTime(
+                                    displayedMonth.year,
+                                    displayedMonth.month - 1,
+                                  );
+                                });
+                              }
+                            : null,
+                        icon: Icon(
+                          Icons.chevron_left,
+                          color: canGoPrevMonth()
+                              ? (isDark ? Colors.white : Colors.black87)
+                              : (isDark ? Colors.white24 : Colors.black26),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          dialogSetState(() {
+                            pickerMode = 'year';
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF2A3543)
+                                : const Color(0xFFF0F0F0),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${displayedMonth.year}年${displayedMonth.month}月',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.arrow_drop_down,
+                                size: 20,
+                                color: isDark ? Colors.white70 : Colors.black54,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: canGoNextMonth()
+                            ? () {
+                                dialogSetState(() {
+                                  displayedMonth = DateTime(
+                                    displayedMonth.year,
+                                    displayedMonth.month + 1,
+                                  );
+                                });
+                              }
+                            : null,
+                        icon: Icon(
+                          Icons.chevron_right,
+                          color: canGoNextMonth()
+                              ? (isDark ? Colors.white : Colors.black87)
+                              : (isDark ? Colors.white24 : Colors.black26),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Calendar grid
+                  Expanded(
+                    child: GridView.count(
+                      crossAxisCount: 7,
+                      mainAxisSpacing: 4,
+                      crossAxisSpacing: 4,
+                      children: days,
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            return AlertDialog(
+              backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    pickerMode == 'calendar'
+                        ? 'カレンダーから絞り込み'
+                        : (pickerMode == 'year' ? '年を選択' : '月を選択'),
+                    style: TextStyle(
+                      color: isDark ? Colors.white : Colors.black87,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                    ),
+                  ),
+                  if (selectedDates.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2196F3),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${selectedDates.length}個 選択中',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 350,
+                child: pickerMode == 'calendar'
+                    ? buildCalendar()
+                    : (pickerMode == 'year'
+                          ? buildYearPicker()
+                          : buildMonthPicker()),
+              ),
+              actions: [
+                if (pickerMode != 'calendar')
+                  TextButton(
+                    onPressed: () {
+                      dialogSetState(() {
+                        pickerMode = 'calendar';
+                      });
+                    },
+                    child: const Text('カレンダーに戻る'),
+                  ),
+                if (pickerMode == 'calendar') ...[
+                  TextButton(
+                    onPressed: () {
+                      dialogSetState(() {
+                        selectedDates.clear();
+                      });
+                    },
+                    child: const Text('クリア'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('キャンセル'),
+                  ),
+                  TextButton(
+                    onPressed: selectedDates.isEmpty
+                        ? null
+                        : () => Navigator.pop(context, selectedDates),
+                    child: const Text('開く'),
+                  ),
+                ],
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result != null) {
+      setState(() {
+        _filterDates = result;
+        _isFilteredByCalendar = true;
+        _selectedIndices.clear();
+        _isSelectionMode = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
@@ -3936,11 +4712,16 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                 if (!_isSelectionMode)
                   TextButton(
                     onPressed: () async {
+                      final isFiltered = _isFilteredByCalendar && _filterDates.isNotEmpty;
+                      final filteredCount = isFiltered ? _sortedIndices.length : _logs.length;
+                      
                       final confirm = await showDialog<bool>(
                         context: context,
                         builder: (context) => AlertDialog(
-                          title: const Text('全て削除'),
-                          content: const Text('全ての計測ログを削除しますか？'),
+                          title: Text(isFiltered ? '絞り込み中の記録を削除' : '全て削除'),
+                          content: Text(isFiltered 
+                              ? '現在絞り込まれている$filteredCount件の計測ログを削除しますか？'
+                              : '全ての計測ログを削除しますか？'),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context, false),
@@ -3957,10 +4738,24 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                         ),
                       );
                       if (confirm == true) {
-                        await widget.clearAllTimeLogs();
-                        setState(() {
-                          _logs.clear();
-                        });
+                        if (isFiltered) {
+                          // Delete only filtered logs (in reverse order to maintain indices)
+                          final indicesToDelete = _sortedIndices.toList()
+                            ..sort((a, b) => b.compareTo(a));
+                          for (final index in indicesToDelete) {
+                            await widget.deleteTimeLog(index);
+                            _logs.removeAt(index);
+                          }
+                          setState(() {
+                            _filterDates.clear();
+                            _isFilteredByCalendar = false;
+                          });
+                        } else {
+                          await widget.clearAllTimeLogs();
+                          setState(() {
+                            _logs.clear();
+                          });
+                        }
                       }
                     },
                     child: const Text(
@@ -3975,12 +4770,87 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
               ? const Center(child: CircularProgressIndicator())
               : Column(
                   children: [
+                    // Calendar filter indicator
+                    if (_isFilteredByCalendar)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 10,
+                        ),
+                        color: isDark
+                            ? const Color(0xFF1E3A5F)
+                            : const Color(0xFFE3F2FD),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'カレンダーから絞り込み ${_filterDates.length}個',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: isDark
+                                      ? const Color(0xFF64B5F6)
+                                      : const Color(0xFF1976D2),
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _isFilteredByCalendar = false;
+                                  _filterDates.clear();
+                                });
+                              },
+                              child: Icon(
+                                Icons.close,
+                                size: 20,
+                                color: isDark
+                                    ? const Color(0xFF64B5F6)
+                                    : const Color(0xFF1976D2),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     if (_logs.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
+                            // Calendar button
+                            GestureDetector(
+                              onTap: _showCalendarDialog,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.calendar_month,
+                                    size: 20,
+                                    color: _isFilteredByCalendar
+                                        ? const Color(0xFF2196F3)
+                                        : (isDark
+                                              ? Colors.white70
+                                              : Colors.black54),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'カレンダー',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: _isFilteredByCalendar
+                                          ? const Color(0xFF2196F3)
+                                          : (isDark
+                                                ? Colors.white70
+                                                : Colors.black54),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Sort dropdown
                             PopupMenuButton<String>(
                               onSelected: (value) async {
                                 final prefs =
@@ -4038,9 +4908,20 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                 ),
                               ),
                             )
+                          : _sortedIndices.isEmpty
+                          ? Center(
+                              child: Text(
+                                '選択した日付に記録がありません',
+                                style: TextStyle(
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.black54,
+                                ),
+                              ),
+                            )
                           : ListView.builder(
                               padding: const EdgeInsets.all(20),
-                              itemCount: _logs.length,
+                              itemCount: _sortedIndices.length,
                               itemBuilder: (context, index) {
                                 final sortedIndex = _sortedIndices[index];
                                 final log = _logs[sortedIndex];
@@ -4053,7 +4934,8 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                 final isSelected = _selectedIndices.contains(
                                   sortedIndex,
                                 );
-                                final title = (log['title'] as String?) ?? '無題';
+                                final rawTitle = (log['title'] as String?) ?? '';
+                                final hasTitle = rawTitle.isNotEmpty && rawTitle != '無題';
                                 final memo = (log['memo'] as String?) ?? '';
 
                                 return GestureDetector(
@@ -4112,41 +4994,70 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
                                             children: [
-                                              Text(
-                                                title,
-                                                style: TextStyle(
-                                                  fontSize: 16,
-                                                  color: isDark
-                                                      ? Colors.white
-                                                      : Colors.black87,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                              if (memo.isNotEmpty) ...[
-                                                const SizedBox(height: 2),
+                                              if (hasTitle) ...[
                                                 Text(
-                                                  memo,
+                                                  rawTitle,
+                                                  style: TextStyle(
+                                                    fontSize: 16,
+                                                    color: isDark
+                                                        ? Colors.white
+                                                        : Colors.black87,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                if (memo.isNotEmpty) ...[
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    memo,
+                                                    style: TextStyle(
+                                                      fontSize: 13,
+                                                      color: isDark
+                                                          ? Colors.white54
+                                                          : Colors.black45,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ],
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  dateStr,
                                                   style: TextStyle(
                                                     fontSize: 13,
                                                     color: isDark
                                                         ? Colors.white54
                                                         : Colors.black45,
                                                   ),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
                                                 ),
+                                              ] else ...[
+                                                // No title: show date as main text
+                                                Text(
+                                                  dateStr,
+                                                  style: TextStyle(
+                                                    fontSize: 16,
+                                                    color: isDark
+                                                        ? Colors.white
+                                                        : Colors.black87,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                if (memo.isNotEmpty) ...[
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    memo,
+                                                    style: TextStyle(
+                                                      fontSize: 13,
+                                                      color: isDark
+                                                          ? Colors.white54
+                                                          : Colors.black45,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ],
                                               ],
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                dateStr,
-                                                style: TextStyle(
-                                                  fontSize: 13,
-                                                  color: isDark
-                                                      ? Colors.white54
-                                                      : Colors.black45,
-                                                ),
-                                              ),
                                             ],
                                           ),
                                         ),
