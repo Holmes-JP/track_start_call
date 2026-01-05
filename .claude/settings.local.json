@@ -17,7 +17,8 @@
       "Bash(ffprobe:*)",
       "Bash(cmd.exe /c \"where ffmpeg\")",
       "Bash(cmd.exe /c \"cd /d D:\\\\user\\\\HolmesJP\\\\Desktop\\\\tetete\\\\track_start_call\\\\assets\\\\audio\\\\Flying && copy buzzer.mp3 buzzer_original.mp3 && ffmpeg -y -i buzzer_original.mp3 -ar 22050 -ac 1 -b:a 128k buzzer.mp3\")",
-      "Bash(cmd.exe /c \"dir /s /b C:\\\\Users\\\\*ffmpeg.exe 2>nul | head -5\")"
+      "Bash(cmd.exe /c \"dir /s /b C:\\\\Users\\\\*ffmpeg.exe 2>nul | head -5\")",
+      "Bash(pod install)"
     ]
   }
 }
