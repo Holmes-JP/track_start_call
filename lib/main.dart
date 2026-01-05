@@ -117,15 +117,15 @@ class AudioOptions {
 class PhaseColors {
   // Start colors (medium saturation) - shown at beginning of countdown
   static const readyStart = Color(0xFF8ED860);
-  static const onYourMarksStart = Color(0xFFFFCC00);
+  static const onYourMarksStart = Color(0xFF64B5F6);
   static const setStart = Color(0xFFEF5350); // Clear red from the start
   static const goStart = Color(0xFFFF1744); // Same as end (no countdown for Go)
 
   // End colors (fully saturated/vivid) - shown when countdown reaches 0
   static const ready = Color(0xFF4CAF50);
   static const readySecondary = Color(0xFF2E7D32);
-  static const onYourMarks = Color(0xFFFF9800);
-  static const onYourMarksSecondary = Color(0xFFEF6C00);
+  static const onYourMarks = Color(0xFF2196F3);
+  static const onYourMarksSecondary = Color(0xFF1976D2);
   static const set = Color(0xFFD32F2F); // Deep vivid red
   static const setSecondary = Color(0xFFB71C1C); // Dark red
   static const go = Color(0xFFFF1744); // Vivid red-pink
@@ -400,7 +400,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
 
   Future<void> _initAudioPlayer() async {
     _player = AudioPlayer();
-    _buzzerPlayer = AudioPlayer(); // Initialize buzzer player
+    _buzzerPlayer = AudioPlayer();
+
     // Configure audio player for background playback
     await _player.setPlayerMode(PlayerMode.mediaPlayer);
     await _player.setAudioContext(
@@ -418,7 +419,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         ),
       ),
     );
-    // Configure buzzer player (use mediaPlayer mode for better compatibility)
+
+    // Configure buzzer player (use same settings as main player)
     await _buzzerPlayer.setPlayerMode(PlayerMode.mediaPlayer);
     await _buzzerPlayer.setAudioContext(
       AudioContext(
@@ -429,15 +431,12 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         android: AudioContextAndroid(
           isSpeakerphoneOn: false,
           stayAwake: true,
-          contentType: AndroidContentType.sonification,
-          usageType: AndroidUsageType.notification,
-          audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+          contentType: AndroidContentType.music,
+          usageType: AndroidUsageType.media,
+          audioFocus: AndroidAudioFocus.gain,
         ),
       ),
     );
-
-    // Preload buzzer sound for faster playback
-    await _buzzerPlayer.setSource(AssetSource('audio/Flying/buzzer.mp3'));
   }
 
   @override
@@ -1003,7 +1002,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
           // Use Z-axis for detecting forward movement
           final zForce = event.z.abs();
 
-          if (zForce >= _reactionThreshold) {
+          if (zForce >= _reactionThreshold && !_isFlying) {
             final now = DateTime.now();
 
             if (_goSignalTime == null) {
@@ -1011,15 +1010,18 @@ class _StartCallHomePageState extends State<StartCallHomePage>
               _isFlying = true;
               _flyingEarlyTime = null;
 
-              // Stop main audio player first
+              // Cancel accelerometer immediately to prevent multiple triggers
+              _accelerometerSubscription?.cancel();
+
+              // Play buzzer sound
+              _buzzerPlayer.stop();
+              _buzzerPlayer.play(AssetSource('audio/Flying/buzzer.mp3'));
+
+              // Stop main player
               _player.stop();
 
               // Stop everything and show FLYING
               _stopFlyingDetected();
-
-              // Play buzzer sound (already preloaded)
-              _buzzerPlayer.seek(Duration.zero);
-              _buzzerPlayer.resume();
             } else {
               // Movement detected AFTER GO signal = Valid reaction
               _reactionTime =
@@ -1121,6 +1123,118 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       default:
         return const Color(0xFF00BCD4);
     }
+  }
+
+  // Show measurement mode info dialog
+  void _showMeasurementModeInfo(BuildContext context) {
+    final isDark = themeNotifier.value;
+    final modeColor = _getMeasurementTargetColor();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                color: modeColor,
+                size: 24,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '計測モード設定',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildInfoRow(
+                  'オートセーブ',
+                  _autoSaveEnabled ? 'オン' : 'オフ',
+                  isDark,
+                ),
+                const SizedBox(height: 10),
+                _buildInfoRow(
+                  '計測対象',
+                  _getMeasurementTargetLabel(),
+                  isDark,
+                ),
+                // Show trigger only for goal modes
+                if (_measurementTarget != 'reaction') ...[
+                  const SizedBox(height: 10),
+                  _buildInfoRow(
+                    'トリガー',
+                    _triggerMethod == 'tap' ? 'タップ' : 'ボタン',
+                    isDark,
+                  ),
+                  // Show lag time only for hardware button trigger
+                  if (_triggerMethod == 'hardware_button' && _lagCompensation > 0) ...[
+                    const SizedBox(height: 10),
+                    _buildInfoRow(
+                      'ラグタイム',
+                      '${_lagCompensation.toStringAsFixed(2)}秒',
+                      isDark,
+                    ),
+                  ],
+                ],
+                // Show acceleration threshold for reaction modes
+                if (_measurementTarget != 'goal') ...[
+                  const SizedBox(height: 10),
+                  _buildInfoRow(
+                    '加速度しきい値',
+                    _reactionThreshold.toStringAsFixed(1),
+                    isDark,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('閉じる'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Helper to build info row
+  Widget _buildInfoRow(String label, String value, bool isDark) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            color: isDark ? Colors.white70 : Colors.black54,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: isDark ? Colors.white : Colors.black87,
+          ),
+        ),
+      ],
+    );
   }
 
   // Build measurement target option for accordion menu
@@ -1341,15 +1455,46 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         ),
       );
 
-      // Random time between 8.0 and 15.0 seconds
-      final time = 8.0 + random.nextDouble() * 7.0;
+      // Random measurement type: 0=goal only, 1=reaction only, 2=goal+reaction
+      final measurementType = random.nextInt(3);
 
-      logs.add({
-        'time': double.parse(time.toStringAsFixed(2)),
+      // Build tags based on measurement type
+      final List<String> tags = [];
+      double? time;
+      double? reactionTime;
+
+      if (measurementType == 0) {
+        // Goal only
+        tags.add('ゴール');
+        time = 8.0 + random.nextDouble() * 7.0; // 8.0-15.0 seconds
+      } else if (measurementType == 1) {
+        // Reaction only
+        tags.add('リアクション');
+        reactionTime = 0.1 + random.nextDouble() * 0.4; // 0.1-0.5 seconds
+      } else if (measurementType == 2) {
+        // Goal + Reaction
+        tags.add('ゴール');
+        tags.add('リアクション');
+        time = 8.0 + random.nextDouble() * 7.0;
+        reactionTime = 0.1 + random.nextDouble() * 0.4;
+      }
+
+      final record = <String, dynamic>{
         'date': date.toIso8601String(),
         'title': '[テスト用] 記録 ${i + 1}',
         'memo': 'テスト用の記録です',
-      });
+        'tags': tags,
+        'isFlying': false,
+      };
+
+      if (time != null) {
+        record['time'] = double.parse(time.toStringAsFixed(2));
+      }
+      if (reactionTime != null) {
+        record['reactionTime'] = double.parse(reactionTime.toStringAsFixed(3));
+      }
+
+      logs.add(record);
     }
 
     await prefs.setString('time_logs', jsonEncode(logs));
@@ -1368,6 +1513,62 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     });
 
     await prefs.setString('time_logs', jsonEncode(logs));
+  }
+
+  // Reset all settings to defaults
+  Future<void> _resetSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Clear all settings (but keep time_logs)
+    await prefs.remove('on_fixed');
+    await prefs.remove('on_min');
+    await prefs.remove('on_max');
+    await prefs.remove('on_random');
+    await prefs.remove('set_fixed');
+    await prefs.remove('set_min');
+    await prefs.remove('set_max');
+    await prefs.remove('set_random');
+    await prefs.remove('pan_fixed');
+    await prefs.remove('pan_min');
+    await prefs.remove('pan_max');
+    await prefs.remove('pan_random');
+    await prefs.remove('on_audio_path');
+    await prefs.remove('set_audio_path');
+    await prefs.remove('go_audio_path');
+    await prefs.remove('loop_enabled');
+    await prefs.remove('time_measurement_enabled');
+    await prefs.remove('trigger_method');
+    await prefs.remove('lag_compensation');
+    await prefs.remove('auto_save_enabled');
+    await prefs.remove('measurement_target');
+    await prefs.remove('reaction_threshold');
+    await prefs.remove('log_sort_order');
+
+    // Reset state to defaults
+    if (mounted) {
+      setState(() {
+        _onFixed = 5.0;
+        _onRange = const RangeValues(1.5, 2.5);
+        _randomOn = false;
+        _setFixed = 5.0;
+        _setRange = const RangeValues(0.8, 1.2);
+        _randomSet = false;
+        _panFixed = 5.0;
+        _panRange = const RangeValues(0.8, 1.5);
+        _randomPan = false;
+        _onAudioPath = AudioOptions.onYourMarks[1].path;
+        _setAudioPath = AudioOptions.set[1].path;
+        _goAudioPath = AudioOptions.go[0].path;
+        _loopEnabled = false;
+        _timeMeasurementEnabled = false;
+        _triggerMethod = 'tap';
+        _lagCompensation = 0.0;
+        _autoSaveEnabled = false;
+        _measurementTarget = 'goal';
+        _reactionThreshold = 12.0;
+        _logSortOrder = 'date_desc';
+      });
+    }
   }
 
   Future<void> _showLogEditDialog(
@@ -1776,6 +1977,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
           openTimeLogsPage: _openTimeLogsPage,
           addTestRecords: _addTestRecords,
           deleteTestRecords: _deleteTestRecords,
+          resetSettings: _resetSettings,
         ),
       ),
     );
@@ -2274,6 +2476,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                     overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
                     trackShape: const RoundedRectSliderTrackShape(),
                     rangeTrackShape: const RoundedRectRangeSliderTrackShape(),
+                    activeTickMarkColor: Colors.transparent,
+                    inactiveTickMarkColor: Colors.transparent,
                   ),
                   child: RangeSlider(
                     values: rangeValues,
@@ -2321,6 +2525,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                     thumbColor: const Color(0xFF6BCB1F),
                     overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
                     trackShape: const RoundedRectSliderTrackShape(),
+                    trackHeight: 4.0,
+                    activeTickMarkColor: Colors.transparent,
+                    inactiveTickMarkColor: Colors.transparent,
                   ),
                   child: Slider(
                     value: fixedValue,
@@ -2502,8 +2709,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         } else {
           displayText = '---';
         }
+        // Show reaction time or "----" if not captured
         if (_reactionTime != null) {
           reactionDisplayText = _reactionTime!.toStringAsFixed(3);
+        } else {
+          reactionDisplayText = '----';
         }
       } else {
         displayText = '---';
@@ -2606,80 +2816,48 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                   ? Builder(
                       builder: (context) {
                         final modeColor = _getMeasurementTargetColor();
-                        final infoColor = isDark
-                            ? const Color(0xFF4DD0E1)
-                            : const Color(0xFF00838F);
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? const Color(0xFF0D2A3A)
-                                : const Color(0xFFE3F2FD),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: modeColor.withOpacity(0.5),
-                              width: 1,
+                        return GestureDetector(
+                          onTap: () => _showMeasurementModeInfo(context),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
                             ),
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    _getMeasurementTargetIcon(),
-                                    size: 16,
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF0D2A3A)
+                                  : const Color(0xFFE3F2FD),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: modeColor.withOpacity(0.5),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.timer,
+                                  size: 16,
+                                  color: modeColor,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '計測モード',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
                                     color: modeColor,
                                   ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '計測モード：${_getMeasurementTargetLabel()}',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: modeColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (_autoSaveEnabled) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'オートセーブ',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: infoColor,
-                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 16,
+                                  color: modeColor.withOpacity(0.7),
                                 ),
                               ],
-                              const SizedBox(height: 4),
-                              Text(
-                                'トリガー：${_triggerMethod == 'tap' ? 'タップ' : 'ボタン'}',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: infoColor,
-                                ),
-                              ),
-                              if (_lagCompensation > 0 &&
-                                  _triggerMethod == 'hardware_button') ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'ラグタイム：${_lagCompensation.toStringAsFixed(2)}秒',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: infoColor,
-                                  ),
-                                ),
-                              ],
-                            ],
+                            ),
                           ),
                         );
                       },
@@ -2715,13 +2893,14 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     final isDark = themeNotifier.value;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
+      child: Column(
         children: [
-          // Left side: Settings button and time measurement indicator
-          Column(
-            mainAxisAlignment: MainAxisAlignment.start,
+          // Top row: Settings button (left) and Measurement mode (right)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Settings button
               IconButton(
                 onPressed: _showMeasurementResult ? null : _openSettings,
                 icon: const Icon(Icons.tune_rounded, size: 22),
@@ -2739,125 +2918,14 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                   ),
                 ),
               ),
-              if (_timeMeasurementEnabled && !_isSettingsOpen) ...[
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? const Color(0xFF0D2A3A)
-                        : const Color(0xFFE3F2FD),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: const Color(0xFF00BCD4),
-                      width: 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF00BCD4).withOpacity(0.25),
-                        blurRadius: 6,
-                        spreadRadius: 0,
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.timer,
-                            size: 16,
-                            color: Color(0xFF00BCD4),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'タイム計測モード',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: isDark
-                                  ? const Color(0xFF00BCD4)
-                                  : const Color(0xFF0097A7),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (_autoSaveEnabled) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'オートセーブ',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? const Color(0xFF4DD0E1)
-                                : const Color(0xFF00838F),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 2),
-                      Text(
-                        'トリガー：${_triggerMethod == 'tap' ? 'タップ' : 'ボタン'}',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: isDark
-                              ? const Color(0xFF4DD0E1)
-                              : const Color(0xFF00838F),
-                        ),
-                      ),
-                      if (_lagCompensation > 0 &&
-                          _triggerMethod == 'hardware_button') ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          'ラグタイム：${_lagCompensation.toStringAsFixed(2)}秒',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? const Color(0xFF4DD0E1)
-                                : const Color(0xFF00838F),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(width: 16),
-          // Center: Timer panel (larger)
-          Expanded(
-            child: Center(
-              child: _buildTimerPanel(
-                countdownText,
-                showCountdown,
-                isLandscape: true,
-                reactionText: reactionText,
-                isFlying: isFlying,
-              ),
-            ),
-          ),
-          // Right side: Measurement target selector and Buttons
-          if (!_isSettingsOpen) ...[
-            const SizedBox(width: 16),
-            Column(
-              mainAxisAlignment: MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                // Measurement mode display (right side for landscape)
-                if (_timeMeasurementEnabled)
-                  Builder(
-                    builder: (context) {
-                      final modeColor = _getMeasurementTargetColor();
-                      return Container(
+              // Measurement mode display (top right)
+              if (_timeMeasurementEnabled && !_isSettingsOpen)
+                Builder(
+                  builder: (context) {
+                    final modeColor = _getMeasurementTargetColor();
+                    return GestureDetector(
+                      onTap: () => _showMeasurementModeInfo(context),
+                      child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 10,
                           vertical: 6,
@@ -2876,30 +2944,51 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              _getMeasurementTargetIcon(),
+                              Icons.timer,
                               size: 14,
                               color: modeColor,
                             ),
                             const SizedBox(width: 5),
                             Text(
-                              '計測モード：${_getMeasurementTargetLabel()}',
+                              '計測モード',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                                 color: modeColor,
                               ),
                             ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.info_outline,
+                              size: 14,
+                              color: modeColor.withOpacity(0.7),
+                            ),
                           ],
                         ),
-                      );
-                    },
-                  ),
-                const SizedBox(height: 16),
-                // Buttons
-                SizedBox(width: 90, child: _buildButtons(isLandscape: true)),
-              ],
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+          // Center: Timer panel (expanded to fill space)
+          Expanded(
+            child: Center(
+              child: _buildTimerPanel(
+                countdownText,
+                showCountdown,
+                isLandscape: true,
+                reactionText: reactionText,
+                isFlying: isFlying,
+              ),
             ),
-          ],
+          ),
+          // Bottom: Buttons (horizontal layout)
+          if (!_isSettingsOpen)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _buildButtons(isLandscape: true),
+            ),
         ],
       ),
     );
@@ -2946,7 +3035,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
             ? 20.0
             : (isSmallScreen ? 16.0 : 20.0);
         final verticalPadding = isLandscape
-            ? 12.0
+            ? 10.0
             : (isSmallScreen ? 14.0 : 18.0);
         final borderRadius = isSmallScreen ? 18.0 : 22.0;
 
@@ -2995,6 +3084,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
               )
             : null;
 
+        // Calculate max panel height for landscape to prevent overflow
+        final maxPanelHeight = isLandscape
+            ? screenHeight * 0.85  // Leave space for buttons
+            : double.infinity;
+
         return RepaintBoundary(
           child: CustomPaint(
             painter: progressPainter,
@@ -3002,6 +3096,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
               constraints: BoxConstraints(
                 minWidth: panelWidth,
                 maxWidth: panelWidth,
+                maxHeight: maxPanelHeight,
               ),
               padding: EdgeInsets.symmetric(
                 horizontal: horizontalPadding,
@@ -3020,10 +3115,12 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                       ]
                     : null,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
                   // Phase label with glow - fixed height to prevent size changes
                   // Hide label when flying (show only FLYING START in countdown area)
                   if (!isFlying && _phaseLabel != 'FLYING')
@@ -3105,7 +3202,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            'リアクション: ${reactionText}s',
+                            'リアクション: $reactionText${reactionText != '----' ? 's' : ''}',
                             style: GoogleFonts.robotoMono(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -3117,6 +3214,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                     ),
                   ],
                 ],
+                ),
               ),
             ),
           ),
@@ -3180,10 +3278,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                   isSmallScreen: isSmallScreen || isLandscape,
                 ),
               ),
-              SizedBox(
-                width: isLandscape ? 0 : buttonSpacing,
-                height: isLandscape ? buttonSpacing : 0,
-              ),
+              SizedBox(width: buttonSpacing),
               Expanded(
                 child: _buildGlowButton(
                   onPressed: _resetSequence,
@@ -3253,10 +3348,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                       isSmallScreen: isSmallScreen || isLandscape,
                     ),
             ),
-            SizedBox(
-              width: isLandscape ? 0 : buttonSpacing,
-              height: isLandscape ? buttonSpacing : 0,
-            ),
+            SizedBox(width: buttonSpacing),
             Expanded(
               child: _buildGlowButton(
                 onPressed: (_isPaused || _isFinished) ? _resetSequence : null,
@@ -3271,18 +3363,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         }
 
         if (isLandscape) {
-          // In landscape, replace Expanded with fixed height buttons
-          final landscapeButtons = buttons.map((widget) {
-            if (widget is Expanded) {
-              return SizedBox(width: double.infinity, child: widget.child);
-            }
-            return widget;
-          }).toList();
-
-          return Column(
+          // In landscape, use horizontal layout at bottom
+          return Row(
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
-            children: landscapeButtons,
+            children: buttons,
           );
         } else {
           return Padding(
@@ -3637,6 +3722,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
   bool _isSearching = false;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  Set<String> _selectedTags = {}; // Selected tags for filtering (empty = show all)
 
   // Cached sorted indices for performance
   List<int>? _cachedSortedIndices;
@@ -3685,6 +3771,128 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
     }
   }
 
+  // Get all unique tags from logs
+  Set<String> get _allTags {
+    final tags = <String>{};
+    for (final log in _logs) {
+      final logTags = (log['tags'] as List?) ?? [];
+      for (final tag in logTags) {
+        if (tag is String) tags.add(tag);
+      }
+    }
+    return tags;
+  }
+
+  void _showTagFilterPanel(BuildContext context, bool isDark) {
+    // Unfocus search field when opening tag panel
+    _searchFocusNode.unfocus();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+      elevation: 16,
+      barrierColor: Colors.black54,
+      clipBehavior: Clip.antiAliasWithSaveLayer,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final availableTags = _allTags.toList()..sort();
+            return Material(
+              color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              clipBehavior: Clip.antiAliasWithSaveLayer,
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'タグで絞り込み',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                      if (_selectedTags.isNotEmpty)
+                        TextButton(
+                          onPressed: () {
+                            setModalState(() {
+                              _selectedTags.clear();
+                            });
+                            setState(() {
+                              _invalidateSortCache();
+                            });
+                          },
+                          child: const Text('クリア'),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (availableTags.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: Text(
+                          'タグがありません',
+                          style: TextStyle(
+                            color: isDark ? Colors.white54 : Colors.black45,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: availableTags.map((tag) {
+                        final isSelected = _selectedTags.contains(tag);
+                        return FilterChip(
+                          label: Text(tag),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            setModalState(() {
+                              if (selected) {
+                                _selectedTags.add(tag);
+                              } else {
+                                _selectedTags.remove(tag);
+                              }
+                            });
+                            setState(() {
+                              _invalidateSortCache();
+                            });
+                          },
+                          backgroundColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE8E8E8),
+                          selectedColor: Theme.of(context).colorScheme.primaryContainer,
+                          checkmarkColor: Theme.of(context).colorScheme.primary,
+                        );
+                      }).toList(),
+                    ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('完了'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   // Get all unique dates that have logs (date only, no time)
   Set<DateTime> get _logDates {
     return _logs.map((log) {
@@ -3726,6 +3934,16 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
           );
         }).toList();
       }
+    }
+
+    // Apply tag filter if any tags are selected
+    if (_selectedTags.isNotEmpty) {
+      indices = indices.where((i) {
+        final log = _logs[i];
+        final tags = ((log['tags'] as List?) ?? []).cast<String>().toSet();
+        // Show records that have ALL selected tags
+        return _selectedTags.every((tag) => tags.contains(tag));
+      }).toList();
     }
 
     // Apply calendar filter if active
@@ -4318,14 +4536,37 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  // Calendar grid
+                  // Calendar grid with swipe support
                   Expanded(
-                    child: GridView.count(
-                      crossAxisCount: 7,
-                      mainAxisSpacing: 4,
-                      crossAxisSpacing: 4,
-                      padding: EdgeInsets.zero,
-                      children: days,
+                    child: GestureDetector(
+                      onHorizontalDragEnd: (details) {
+                        if (details.primaryVelocity == null) return;
+                        // Swipe left (negative velocity) = next month
+                        if (details.primaryVelocity! < -100 && canGoNextMonth()) {
+                          dialogSetState(() {
+                            displayedMonth = DateTime(
+                              displayedMonth.year,
+                              displayedMonth.month + 1,
+                            );
+                          });
+                        }
+                        // Swipe right (positive velocity) = previous month
+                        else if (details.primaryVelocity! > 100 && canGoPrevMonth()) {
+                          dialogSetState(() {
+                            displayedMonth = DateTime(
+                              displayedMonth.year,
+                              displayedMonth.month - 1,
+                            );
+                          });
+                        }
+                      },
+                      child: GridView.count(
+                        crossAxisCount: 7,
+                        mainAxisSpacing: 4,
+                        crossAxisSpacing: 4,
+                        padding: EdgeInsets.zero,
+                        children: days,
+                      ),
                     ),
                   ),
                 ],
@@ -4407,9 +4648,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                     child: const Text('キャンセル'),
                   ),
                   TextButton(
-                    onPressed: selectedDates.isEmpty
-                        ? null
-                        : () => Navigator.pop(context, selectedDates),
+                    onPressed: () => Navigator.pop(context, selectedDates),
                     child: const Text('開く'),
                   ),
                 ],
@@ -4423,7 +4662,8 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
     if (result != null) {
       setState(() {
         _filterDates = result;
-        _isFilteredByCalendar = true;
+        // If no dates selected, clear the filter
+        _isFilteredByCalendar = result.isNotEmpty;
         _selectedIndices.clear();
         _isSelectionMode = false;
         _invalidateSortCache();
@@ -4442,6 +4682,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
             backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
             foregroundColor: isDark ? Colors.white : Colors.black87,
             elevation: 0,
+            scrolledUnderElevation: 0,
             centerTitle: false,
             titleSpacing: 0,
             toolbarHeight: kToolbarHeight,
@@ -4531,6 +4772,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                             _searchQuery = '';
                             _searchController.clear();
                             _isSearching = false;
+                            _selectedTags.clear();
                             _invalidateSortCache();
                           });
                         } else {
@@ -4615,8 +4857,13 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                   onTap: () {
                                     setState(() {
                                       _isSearching = !_isSearching;
-                                      if (_isSearching) {
-                                        _searchFocusNode.requestFocus();
+                                      if (!_isSearching) {
+                                        // Reset search when closing
+                                        _searchQuery = '';
+                                        _searchController.clear();
+                                        _selectedTags.clear();
+                                        _searchFocusNode.unfocus();
+                                        _invalidateSortCache();
                                       }
                                     });
                                   },
@@ -4665,7 +4912,10 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                 const SizedBox(width: 16),
                                 // Calendar button
                                 GestureDetector(
-                                  onTap: _showCalendarDialog,
+                                  onTap: () {
+                                    _searchFocusNode.unfocus();
+                                    _showCalendarDialog();
+                                  },
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -4698,6 +4948,9 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                             ),
                             // Sort dropdown
                             PopupMenuButton<String>(
+                              onOpened: () {
+                                _searchFocusNode.unfocus();
+                              },
                               onSelected: (value) async {
                                 final prefs =
                                     await SharedPreferences.getInstance();
@@ -4743,47 +4996,111 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                           ],
                         ),
                       ),
-                    // Search input field
-                    if (_isSearching)
+                    // Search input field and tag filter
+                    if (_isSearching) ...[
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                        child: TextField(
-                          controller: _searchController,
-                          focusNode: _searchFocusNode,
-                          decoration: InputDecoration(
-                            hintText: '題名、メモ、秒数で検索',
-                            prefixIcon: const Icon(Icons.search),
-                            suffixIcon: _searchController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: () {
-                                      setState(() {
-                                        _searchController.clear();
-                                        _searchQuery = '';
-                                        _invalidateSortCache();
-                                      });
-                                    },
-                                  )
-                                : null,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _searchController,
+                                focusNode: _searchFocusNode,
+                                decoration: InputDecoration(
+                                  hintText: '題名、メモ、秒数で検索',
+                                  prefixIcon: const Icon(Icons.search),
+                                  suffixIcon: _searchController.text.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear),
+                                          onPressed: () {
+                                            setState(() {
+                                              _searchController.clear();
+                                              _searchQuery = '';
+                                              _invalidateSortCache();
+                                            });
+                                          },
+                                        )
+                                      : null,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  isDense: true,
+                                ),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _searchQuery = value;
+                                    _invalidateSortCache();
+                                  });
+                                },
+                              ),
                             ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
+                            const SizedBox(width: 8),
+                            // Tag filter button
+                            TextButton.icon(
+                              onPressed: () {
+                                _showTagFilterPanel(context, isDark);
+                              },
+                              icon: Icon(
+                                Icons.label,
+                                size: 18,
+                                color: _selectedTags.isNotEmpty
+                                    ? Theme.of(context).colorScheme.primary
+                                    : (isDark ? Colors.white70 : Colors.black54),
+                              ),
+                              label: Text(
+                                'タグ${_selectedTags.isNotEmpty ? '(${_selectedTags.length})' : ''}',
+                                style: TextStyle(
+                                  color: _selectedTags.isNotEmpty
+                                      ? Theme.of(context).colorScheme.primary
+                                      : (isDark ? Colors.white70 : Colors.black54),
+                                ),
+                              ),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                              ),
                             ),
-                            isDense: true,
-                          ),
-                          onChanged: (value) {
-                            setState(() {
-                              _searchQuery = value;
-                              _invalidateSortCache();
-                            });
-                          },
+                          ],
                         ),
                       ),
+                      // Selected tags display
+                      if (_selectedTags.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: _selectedTags.map((tag) {
+                              return Chip(
+                                label: Text(
+                                  tag,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                deleteIcon: const Icon(Icons.close, size: 16),
+                                onDeleted: () {
+                                  setState(() {
+                                    _selectedTags.remove(tag);
+                                    _invalidateSortCache();
+                                  });
+                                },
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                    ],
                     Expanded(
-                      child: _logs.isEmpty
+                      child: GestureDetector(
+                        onTap: () {
+                          // Unfocus search field when tapping on list area
+                          _searchFocusNode.unfocus();
+                        },
+                        behavior: HitTestBehavior.translucent,
+                        child: _logs.isEmpty
                           ? Center(
                               child: Text(
                                 '計測ログがありません',
@@ -4797,7 +5114,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                           : _sortedIndices.isEmpty
                           ? Center(
                               child: Text(
-                                _searchQuery.isNotEmpty
+                                _searchQuery.isNotEmpty || _selectedTags.isNotEmpty
                                     ? '検索結果がありません'
                                     : '選択した日付に記録がありません',
                                 style: TextStyle(
@@ -4841,12 +5158,22 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
 
                                 return GestureDetector(
                                   onLongPress: () {
+                                    // If search is focused, just unfocus first
+                                    if (_searchFocusNode.hasFocus) {
+                                      _searchFocusNode.unfocus();
+                                      return;
+                                    }
                                     setState(() {
                                       _isSelectionMode = true;
                                       _selectedIndices.add(sortedIndex);
                                     });
                                   },
                                   onTap: () {
+                                    // If search is focused, just unfocus first
+                                    if (_searchFocusNode.hasFocus) {
+                                      _searchFocusNode.unfocus();
+                                      return;
+                                    }
                                     if (_isSelectionMode) {
                                       setState(() {
                                         if (_selectedIndices.contains(
@@ -5084,6 +5411,7 @@ class _TimeLogsPageState extends State<TimeLogsPage> {
                                 );
                               },
                             ),
+                      ),
                     ),
                   ],
                 ),
@@ -5157,6 +5485,7 @@ class _LogEditPageState extends State<LogEditPage> {
             backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
             foregroundColor: isDark ? Colors.white : Colors.black87,
             elevation: 0,
+            scrolledUnderElevation: 0,
             leading: IconButton(
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.close),
@@ -5192,14 +5521,14 @@ class _LogEditPageState extends State<LogEditPage> {
                           style: TextStyle(
                             fontSize: 12,
                             color: isGoal
-                                ? Colors.cyan.shade900
-                                : Colors.orange.shade900,
+                                ? Colors.cyan
+                                : Colors.orange,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         backgroundColor: isGoal
-                            ? Colors.cyan.withAlpha(50)
-                            : Colors.orange.withAlpha(50),
+                            ? Colors.cyan.withAlpha(30)
+                            : Colors.orange.withAlpha(30),
                         side: BorderSide(
                           color: isGoal ? Colors.cyan : Colors.orange,
                           width: 1,
@@ -5431,6 +5760,7 @@ class SettingsPage extends StatefulWidget {
   final VoidCallback openTimeLogsPage;
   final Future<void> Function() addTestRecords;
   final Future<void> Function() deleteTestRecords;
+  final Future<void> Function() resetSettings;
 
   const SettingsPage({
     super.key,
@@ -5477,6 +5807,7 @@ class SettingsPage extends StatefulWidget {
     required this.openTimeLogsPage,
     required this.addTestRecords,
     required this.deleteTestRecords,
+    required this.resetSettings,
   });
 
   @override
@@ -5884,6 +6215,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         : const Color(0xFFD0D0D0),
                     thumbColor: const Color(0xFF6BCB1F),
                     overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
+                    activeTickMarkColor: Colors.transparent,
+                    inactiveTickMarkColor: Colors.transparent,
                   ),
                   child: RangeSlider(
                     values: rangeValues,
@@ -5921,6 +6254,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         : const Color(0xFFD0D0D0),
                     thumbColor: const Color(0xFF6BCB1F),
                     overlayColor: const Color(0xFF6BCB1F).withOpacity(0.2),
+                    trackHeight: 4.0,
+                    activeTickMarkColor: Colors.transparent,
+                    inactiveTickMarkColor: Colors.transparent,
                   ),
                   child: Slider(
                     value: fixedValue,
@@ -6028,13 +6364,23 @@ class _SettingsPageState extends State<SettingsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '♪音声素材',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : Colors.black87,
-                        ),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.music_note,
+                            size: 18,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '音声素材',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
                       _buildCreditLink('音読さん', 'https://ondoku3.com/', isDark),
@@ -6095,6 +6441,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ? const Color(0xFF0E131A)
                 : const Color(0xFFF0F0F0),
             elevation: 0,
+            scrolledUnderElevation: 0,
             leading: IconButton(
               icon: Icon(
                 Icons.arrow_back,
@@ -6266,7 +6613,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                               const SizedBox(width: 14),
                               Text(
-                                'タイム計測',
+                                '計測モード',
                                 style: Theme.of(context).textTheme.titleMedium
                                     ?.copyWith(
                                       fontWeight: FontWeight.w600,
@@ -6592,6 +6939,9 @@ class _SettingsPageState extends State<SettingsPage> {
                                     overlayColor: const Color(
                                       0xFFFF9800,
                                     ).withOpacity(0.2),
+                                    trackHeight: 4.0,
+                                    activeTickMarkColor: Colors.transparent,
+                                    inactiveTickMarkColor: Colors.transparent,
                                   ),
                                   child: Slider(
                                     value: _reactionThreshold,
@@ -6756,6 +7106,9 @@ class _SettingsPageState extends State<SettingsPage> {
                                     overlayColor: const Color(
                                       0xFF00BCD4,
                                     ).withOpacity(0.2),
+                                    trackHeight: 4.0,
+                                    activeTickMarkColor: Colors.transparent,
+                                    inactiveTickMarkColor: Colors.transparent,
                                   ),
                                   child: Slider(
                                     value: _lagCompensation,
@@ -7202,6 +7555,16 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
                 ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 12),
+                  child: Text(
+                    'この設定は早期アクセス版のデバッグのための機能です。\n正式リリース時にはこの機能は削除します。\nカレンダーの動作検証などにお使いください。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white38 : Colors.black38,
+                    ),
+                  ),
+                ),
                 GestureDetector(
                   onTap: () async {
                     await widget.addTestRecords();
@@ -7305,6 +7668,120 @@ class _SettingsPageState extends State<SettingsPage> {
                               color: isDark ? Colors.white : Colors.black87,
                             ),
                           ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 32),
+                // Reset settings section
+                GestureDetector(
+                  onTap: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+                        title: Text(
+                          '設定をリセット',
+                          style: TextStyle(
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                        content: Text(
+                          'すべての設定を初期状態に戻しますか？\n計測ログは削除されません。',
+                          style: TextStyle(
+                            color: isDark ? Colors.white70 : Colors.black54,
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('キャンセル'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text(
+                              'リセット',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      await widget.resetSettings();
+                      if (mounted) {
+                        // Update local state to reflect reset
+                        setState(() {
+                          _timeMeasurementEnabled = false;
+                          _autoSaveEnabled = false;
+                          _triggerMethod = 'tap';
+                          _lagCompensation = 0.0;
+                          _measurementTarget = 'goal';
+                          _reactionThreshold = 12.0;
+                          _loopEnabled = false;
+                          _randomOn = false;
+                          _randomSet = false;
+                          _randomPan = false;
+                          _onFixed = 5.0;
+                          _setFixed = 5.0;
+                          _panFixed = 5.0;
+                          _onRange = const RangeValues(1.5, 2.5);
+                          _setRange = const RangeValues(0.8, 1.2);
+                          _panRange = const RangeValues(0.8, 1.5);
+                          _onAudioPath = AudioOptions.onYourMarks[1].path;
+                          _setAudioPath = AudioOptions.set[1].path;
+                          _goAudioPath = AudioOptions.go[0].path;
+                          _lagController.text = '0.00';
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('設定をリセットしました'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 16,
+                      horizontal: 20,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF141B26) : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isDark
+                              ? const Color(0xFF2A3543)
+                              : const Color(0xFFE0E0E0),
+                          spreadRadius: 1,
+                          blurRadius: 0,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.settings_backup_restore,
+                          color: isDark ? Colors.white70 : Colors.black54,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            '設定をリセット',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          Icons.chevron_right,
+                          color: isDark ? Colors.white38 : Colors.black26,
                         ),
                       ],
                     ),
