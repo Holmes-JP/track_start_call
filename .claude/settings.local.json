@@ -20,7 +20,13 @@
       "Bash(cmd.exe /c \"dir /s /b C:\\\\Users\\\\*ffmpeg.exe 2>nul | head -5\")",
       "Bash(flutter pub get:*)",
       "Bash(cmd.exe /c \"C:\\\\src\\\\flutter\\\\bin\\\\flutter.bat pub get\")",
-      "Bash(cmd.exe /c \"C:\\\\src\\\\flutter\\\\bin\\\\flutter.bat analyze lib\\\\main.dart 2>&1\":*)"
+      "Bash(cmd.exe /c \"C:\\\\src\\\\flutter\\\\bin\\\\flutter.bat analyze lib\\\\main.dart 2>&1\":*)",
+      "Bash(/mnt/c/Users/mikih/fvm/default/bin/flutter.bat analyze:*)",
+      "Bash(cmd.exe /c \"flutter analyze lib/main.dart\")",
+      "Bash(cmd.exe /c \"flutter analyze lib/main.dart 2>&1\")",
+      "Bash(ls:*)",
+      "Bash(cmd.exe /c \"flutter pub deps 2>&1\")",
+      "Bash(flutter.bat analyze:*)"
     ]
   }
 }

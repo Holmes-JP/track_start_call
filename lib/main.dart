@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:math';
 import 'dart:ui' as ui;
 
@@ -15,7 +16,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:vector_math/vector_math.dart' hide Colors;
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 // Global theme notifier
@@ -87,62 +87,7 @@ class GpsWarmupStatus {
   });
 }
 
-/// Goal detection result
-class GoalCheckResult {
-  final bool reached;
-  final double? exactDistance;
-  final double? estimatedAccuracy;
-  final double? distanceRemaining;
-
-  GoalCheckResult._({
-    required this.reached,
-    this.exactDistance,
-    this.estimatedAccuracy,
-    this.distanceRemaining,
-  });
-
-  factory GoalCheckResult.reached({
-    required double exactDistance,
-    required double estimatedAccuracy,
-  }) =>
-      GoalCheckResult._(
-        reached: true,
-        exactDistance: exactDistance,
-        estimatedAccuracy: estimatedAccuracy,
-      );
-
-  factory GoalCheckResult.notReached({required double distanceRemaining}) =>
-      GoalCheckResult._(
-        reached: false,
-        distanceRemaining: distanceRemaining,
-      );
-}
-
 /// GPS measurement result
-/// Sample for stride/cadence data over distance
-class StrideSample {
-  final double distance;
-  final int stepCount;
-  final double cadence; // steps per minute
-  final double verticalOscillation; // cm
-  final DateTime timestamp;
-
-  StrideSample({
-    required this.distance,
-    required this.stepCount,
-    required this.cadence,
-    required this.verticalOscillation,
-    required this.timestamp,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'distance': distance,
-        'stepCount': stepCount,
-        'cadence': cadence,
-        'verticalOscillation': verticalOscillation,
-      };
-}
-
 class GpsMeasurementResult {
   final double elapsedTime;
   final double totalDistance;
@@ -153,12 +98,7 @@ class GpsMeasurementResult {
   final double estimatedAccuracy;
   final List<GpsPoint> trackPoints;
   final List<SpeedSample> speedProfile;
-  // Stride data
-  final int totalSteps;
-  final double averageCadence;
-  final double averageStrideLength;
-  final double averageVerticalOscillation;
-  final List<StrideSample> strideProfile;
+  final int gpsUpdateCount; // Number of GPS updates received
 
   GpsMeasurementResult({
     required this.elapsedTime,
@@ -170,11 +110,7 @@ class GpsMeasurementResult {
     required this.estimatedAccuracy,
     required this.trackPoints,
     required this.speedProfile,
-    this.totalSteps = 0,
-    this.averageCadence = 0.0,
-    this.averageStrideLength = 0.0,
-    this.averageVerticalOscillation = 0.0,
-    this.strideProfile = const [],
+    required this.gpsUpdateCount,
   });
 
   Map<String, dynamic> toJson() => {
@@ -184,6 +120,7 @@ class GpsMeasurementResult {
         'topSpeed': topSpeed,
         'averageSpeed': averageSpeed,
         'estimatedAccuracy': estimatedAccuracy,
+        'gpsUpdateCount': gpsUpdateCount,
         'trackPoints': trackPoints
             .where((p) => trackPoints.indexOf(p) % max(1, trackPoints.length ~/ 100) == 0)
             .map((p) => p.toJson())
@@ -225,12 +162,12 @@ class KalmanFilter6D {
 
     // Initialize covariance with high uncertainty
     _P = List.filled(36, 0.0);
-    _P[0] = 10.0; // x variance
-    _P[7] = 10.0; // y variance
-    _P[14] = 1.0; // vx variance
-    _P[21] = 1.0; // vy variance
-    _P[28] = 1.0; // ax variance
-    _P[35] = 1.0; // ay variance
+    _P[0] = 10.0;  // x variance (position uncertainty ~3m)
+    _P[7] = 10.0;  // y variance
+    _P[14] = 100.0; // vx variance (velocity unknown, ~10 m/s std dev)
+    _P[21] = 100.0; // vy variance
+    _P[28] = 25.0;  // ax variance (acceleration ~5 m/s² std dev)
+    _P[35] = 25.0;  // ay variance
   }
 
   /// Predict step: project state forward
@@ -258,17 +195,28 @@ class KalmanFilter6D {
     _P[35] += _processNoiseAccel * dt;
   }
 
+  // Previous GPS position for velocity calculation
+  double? _prevGpsX;
+  double? _prevGpsY;
+  DateTime? _prevGpsTime;
+
   /// Update with GPS measurement
-  void updateWithGPS(double latitude, double longitude, double accuracy) {
+  /// gpsSpeed: GPS-reported speed in m/s (negative if unavailable)
+  /// gpsHeading: GPS-reported heading in degrees (negative if unavailable)
+  void updateWithGPS(double latitude, double longitude, double accuracy,
+      {double gpsSpeed = -1, double gpsHeading = -1}) {
     if (_originLat == null || _originLon == null) {
       initialize(latitude, longitude);
       return;
     }
 
     final now = DateTime.now();
+    double dt = 0.0;
     if (_lastUpdate != null) {
-      final dt = now.difference(_lastUpdate!).inMicroseconds / 1e6;
-      predict(dt);
+      dt = now.difference(_lastUpdate!).inMicroseconds / 1e6;
+      if (dt > 0) {
+        predict(dt);
+      }
     }
     _lastUpdate = now;
 
@@ -280,42 +228,74 @@ class KalmanFilter6D {
     // Measurement noise based on GPS accuracy (minimum 3m)
     final R = max(accuracy * accuracy, 9.0);
 
-    // Kalman gain for position (simplified)
+    // Update position with Kalman filter
     final Kx = _P[0] / (_P[0] + R);
     final Ky = _P[7] / (_P[7] + R);
 
-    // State update
     _state[0] += Kx * (zx - _state[0]);
     _state[1] += Ky * (zy - _state[1]);
 
-    // Covariance update
     _P[0] *= (1 - Kx);
     _P[7] *= (1 - Ky);
-  }
 
-  /// Update with accelerometer measurement (world frame, gravity removed)
-  void updateWithAccelerometer(double ax, double ay) {
-    final now = DateTime.now();
-    if (_lastUpdate != null) {
-      final dt = now.difference(_lastUpdate!).inMicroseconds / 1e6;
-      if (dt > 0) predict(dt);
+    // Update velocity from GPS position change
+    if (_prevGpsX != null && _prevGpsY != null && _prevGpsTime != null) {
+      final gpsDt = now.difference(_prevGpsTime!).inMicroseconds / 1e6;
+      if (gpsDt > 0.05) {  // At least 50ms between measurements
+        // Calculate velocity from position change
+        final observedVx = (zx - _prevGpsX!) / gpsDt;
+        final observedVy = (zy - _prevGpsY!) / gpsDt;
+        final observedSpeed = sqrt(observedVx * observedVx + observedVy * observedVy);
+
+        // If GPS provides valid speed (> 0), use it to validate/correct
+        // gpsSpeed < 0 means unavailable (iOS), gpsSpeed = 0 could be unavailable (Android) or stationary
+        double finalVx = observedVx;
+        double finalVy = observedVy;
+
+        if (gpsSpeed > 0.5) {
+          // GPS speed is available and user is moving - use GPS speed magnitude
+          // Scale the direction from position change, magnitude from GPS
+          if (observedSpeed > 0.1) {
+            final scale = gpsSpeed / observedSpeed;
+            finalVx = observedVx * scale;
+            finalVy = observedVy * scale;
+          } else {
+            // Position change is too small, use GPS speed with heading if available
+            if (gpsHeading >= 0) {
+              final headingRad = gpsHeading * pi / 180;
+              finalVx = gpsSpeed * sin(headingRad);
+              finalVy = gpsSpeed * cos(headingRad);
+            }
+          }
+        }
+
+        // Velocity measurement noise
+        // If GPS speed was used, noise is low (GPS Doppler speed is accurate ~0.1 m/s)
+        // If position-based only, noise is high (position uncertainty / time)
+        final double Rv;
+        if (gpsSpeed > 0.5) {
+          // GPS speed is accurate (Doppler-based)
+          Rv = 0.25;  // ~0.5 m/s standard deviation
+        } else {
+          // Position-derived velocity has higher noise
+          Rv = (R * 2) / (gpsDt * gpsDt) + 1.0;
+        }
+
+        final Kvx = _P[14] / (_P[14] + Rv);
+        final Kvy = _P[21] / (_P[21] + Rv);
+
+        _state[2] += Kvx * (finalVx - _state[2]);
+        _state[3] += Kvy * (finalVy - _state[3]);
+
+        _P[14] *= (1 - Kvx);
+        _P[21] *= (1 - Kvy);
+      }
     }
-    _lastUpdate = now;
 
-    // Measurement noise for accelerometer
-    const R = 0.5;
-
-    // Kalman gain for acceleration (simplified)
-    final Kax = _P[28] / (_P[28] + R);
-    final Kay = _P[35] / (_P[35] + R);
-
-    // State update
-    _state[4] += Kax * (ax - _state[4]);
-    _state[5] += Kay * (ay - _state[5]);
-
-    // Covariance update
-    _P[28] *= (1 - Kax);
-    _P[35] *= (1 - Kay);
+    // Store current GPS position for next velocity calculation
+    _prevGpsX = zx;
+    _prevGpsY = zy;
+    _prevGpsTime = now;
   }
 
   /// Get current estimated position in local coordinates
@@ -373,93 +353,30 @@ class KalmanFilter6D {
     _originLat = null;
     _originLon = null;
     _lastUpdate = null;
+    _prevGpsX = null;
+    _prevGpsY = null;
+    _prevGpsTime = null;
   }
 }
 
-/// Orientation tracker using gyroscope for coordinate frame transformation
-class OrientationTracker {
-  // Current orientation as rotation angles
-  double _yaw = 0.0; // Rotation around vertical axis
-
-  DateTime? _lastUpdate;
-
-  // Gyroscope bias (from calibration)
-  double _gyroBiasZ = 0.0;
-
-  /// Calibrate gyroscope bias (call while device is stationary)
-  void calibrate(List<GyroscopeEvent> samples) {
-    if (samples.isEmpty) return;
-
-    double sumZ = 0.0;
-    for (final sample in samples) {
-      sumZ += sample.z;
-    }
-    _gyroBiasZ = sumZ / samples.length;
-  }
-
-  /// Update orientation from gyroscope
-  void update(GyroscopeEvent event) {
-    final now = DateTime.now();
-    if (_lastUpdate != null) {
-      final dt = now.difference(_lastUpdate!).inMicroseconds / 1e6;
-      if (dt > 0 && dt < 0.1) {
-        // Integrate angular velocity (only yaw for 2D movement)
-        _yaw += (event.z - _gyroBiasZ) * dt;
-      }
-    }
-    _lastUpdate = now;
-  }
-
-  /// Transform acceleration from body frame to world frame (2D)
-  List<double> transformToWorld(double ax, double ay) {
-    final cosYaw = cos(_yaw);
-    final sinYaw = sin(_yaw);
-
-    return [
-      ax * cosYaw - ay * sinYaw,
-      ax * sinYaw + ay * cosYaw,
-    ];
-  }
-
-  /// Get current yaw angle in radians
-  double get yaw => _yaw;
-
-  /// Reset orientation
-  void reset() {
-    _yaw = 0.0;
-    _lastUpdate = null;
-  }
-}
-
-/// Main GPS + Sensor measurement service
+/// Main GPS measurement service (GPS only, no accelerometer/gyroscope)
 class GpsSensorMeasurement {
   // Configuration
   double targetDistance;
   GpsCourseType courseType;
 
-  // Kalman filter and orientation tracker
+  // Kalman filter for GPS smoothing
   final KalmanFilter6D _kalman = KalmanFilter6D();
-  final OrientationTracker _orientation = OrientationTracker();
 
-  // Sensor subscriptions
+  // GPS subscription
   StreamSubscription<Position>? _gpsSubscription;
-  StreamSubscription<AccelerometerEvent>? _accelSubscription;
-  StreamSubscription<GyroscopeEvent>? _gyroSubscription;
 
   // State
   bool _isRunning = false;
-  bool _isCalibrating = false;
   DateTime? _startTime;
   GpsPoint? _startPosition;
   double _totalDistance = 0.0;
   GpsPoint? _lastGpsPoint;
-
-  // Calibration data
-  final List<AccelerometerEvent> _calibrationAccelSamples = [];
-  final List<GyroscopeEvent> _calibrationGyroSamples = [];
-  double _accelBiasX = 0.0;
-  double _accelBiasY = 0.0;
-  double _accelBiasZ = 0.0;
 
   // Data collection
   final List<GpsPoint> _trackPoints = [];
@@ -470,34 +387,14 @@ class GpsSensorMeasurement {
   double _avgGpsAccuracy = 0.0;
   int _gpsAccuracyCount = 0;
 
-  // Stride detection
-  int _stepCount = 0;
-  final List<StrideSample> _strideSamples = [];
-  final List<double> _verticalAccelBuffer = [];
-  static const int _verticalBufferSize = 20;
-  double _lastVerticalPeak = 0.0;
-  bool _lookingForPeak = true;
-  DateTime? _lastStepTime;
-  double _totalVerticalOscillation = 0.0;
-  int _oscillationSamples = 0;
-  double _currentMinZ = 0.0;
-  double _currentMaxZ = 0.0;
-
-  // Goal detection
-  bool _approachingGoal = false;
-  final List<double> _recentSpeeds = [];
-  static const int _speedBufferSize = 10;
-
   // Stream controllers for UI updates
   final _distanceController = StreamController<double>.broadcast();
   final _speedController = StreamController<double>.broadcast();
-  final _goalController = StreamController<GpsMeasurementResult>.broadcast();
   final _accuracyController = StreamController<double>.broadcast();
 
   // Public streams
   Stream<double> get distanceStream => _distanceController.stream;
   Stream<double> get speedStream => _speedController.stream;
-  Stream<GpsMeasurementResult> get goalStream => _goalController.stream;
   Stream<double> get accuracyStream => _accuracyController.stream;
 
   GpsSensorMeasurement({
@@ -505,7 +402,7 @@ class GpsSensorMeasurement {
     this.courseType = GpsCourseType.straight,
   });
 
-  /// Check and request GPS permissions
+  /// Check and request GPS permissions (including background location)
   Future<bool> requestPermissions() async {
     // Check if location services are enabled
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -526,7 +423,17 @@ class GpsSensorMeasurement {
       return false;
     }
 
+    // For background operation, we need 'always' permission
+    // If only 'whileInUse', the app will work but may not track in background
+    // Note: On Android 10+, background permission must be requested separately
+    // and users may need to manually enable it in settings
     return true;
+  }
+
+  /// Check if background location is enabled
+  Future<bool> isBackgroundLocationEnabled() async {
+    final permission = await Geolocator.checkPermission();
+    return permission == LocationPermission.always;
   }
 
   /// GPS warmup - get initial fix and accuracy
@@ -555,51 +462,11 @@ class GpsSensorMeasurement {
     }
   }
 
-  /// Calibrate sensors (device should be stationary)
-  Future<void> calibrateSensors({Duration duration = const Duration(seconds: 3)}) async {
-    _isCalibrating = true;
-    _calibrationAccelSamples.clear();
-    _calibrationGyroSamples.clear();
-
-    // Start collecting calibration samples
-    final accelSub = accelerometerEventStream(
-      samplingPeriod: const Duration(milliseconds: 10),
-    ).listen((event) {
-      _calibrationAccelSamples.add(event);
-    });
-
-    final gyroSub = gyroscopeEventStream(
-      samplingPeriod: const Duration(milliseconds: 10),
-    ).listen((event) {
-      _calibrationGyroSamples.add(event);
-    });
-
-    // Wait for calibration duration
-    await Future.delayed(duration);
-
-    // Stop collecting
-    await accelSub.cancel();
-    await gyroSub.cancel();
-
-    // Calculate bias
-    if (_calibrationAccelSamples.isNotEmpty) {
-      double sumX = 0, sumY = 0, sumZ = 0;
-      for (final sample in _calibrationAccelSamples) {
-        sumX += sample.x;
-        sumY += sample.y;
-        sumZ += sample.z;
-      }
-      final count = _calibrationAccelSamples.length;
-      _accelBiasX = sumX / count;
-      _accelBiasY = sumY / count;
-      // Z-axis bias accounts for gravity (approximately 9.81)
-      _accelBiasZ = (sumZ / count) - 9.81;
-    }
-
-    // Calibrate gyroscope
-    _orientation.calibrate(_calibrationGyroSamples);
-
-    _isCalibrating = false;
+  /// Sensor calibration (stub - sensors removed, GPS-only mode)
+  Future<void> calibrateSensors() async {
+    // No-op: Accelerometer and gyroscope sensors have been removed
+    // GPS doesn't require calibration
+    return;
   }
 
   /// Start GPS measurement
@@ -614,70 +481,62 @@ class GpsSensorMeasurement {
     _finalSpeed = null;
     _trackPoints.clear();
     _speedSamples.clear();
-    _recentSpeeds.clear();
-    _approachingGoal = false;
     _avgGpsAccuracy = 0.0;
     _gpsAccuracyCount = 0;
     _lastGpsPoint = null;
-
-    // Reset stride detection
-    _stepCount = 0;
-    _strideSamples.clear();
-    _verticalAccelBuffer.clear();
-    _lastVerticalPeak = 0.0;
-    _lookingForPeak = true;
-    _lastStepTime = null;
-    _totalVerticalOscillation = 0.0;
-    _oscillationSamples = 0;
-    _currentMinZ = 0.0;
-    _currentMaxZ = 0.0;
+    _startPosition = null;
 
     _kalman.reset();
-    _orientation.reset();
 
-    // Start GPS subscription
-    _gpsSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
+    // Start GPS subscription with platform-specific settings for background operation
+    late LocationSettings locationSettings;
+
+    if (Platform.isAndroid) {
+      locationSettings = AndroidSettings(
         accuracy: LocationAccuracy.best,
         distanceFilter: 0,
-      ),
+        intervalDuration: const Duration(milliseconds: 100), // Request updates every 100ms
+        forceLocationManager: true, // Use LocationManager instead of FusedLocationProvider for higher frequency
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationText: 'GPS計測中...',
+          notificationTitle: 'STARTER PISTOL',
+          enableWakeLock: true,
+          notificationIcon: AndroidResource(name: 'ic_launcher', defType: 'mipmap'),
+        ),
+      );
+    } else if (Platform.isIOS) {
+      locationSettings = AppleSettings(
+        accuracy: LocationAccuracy.best,
+        activityType: ActivityType.fitness,
+        distanceFilter: 0,
+        pauseLocationUpdatesAutomatically: false,
+        showBackgroundLocationIndicator: true,
+      );
+    } else {
+      locationSettings = const LocationSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 0,
+      );
+    }
+
+    _gpsSubscription = Geolocator.getPositionStream(
+      locationSettings: locationSettings,
     ).listen(_onGpsUpdate);
-
-    // Start accelerometer subscription (100Hz)
-    _accelSubscription = accelerometerEventStream(
-      samplingPeriod: const Duration(milliseconds: 10),
-    ).listen(_onAccelerometerUpdate);
-
-    // Start gyroscope subscription (100Hz)
-    _gyroSubscription = gyroscopeEventStream(
-      samplingPeriod: const Duration(milliseconds: 10),
-    ).listen(_onGyroscopeUpdate);
   }
 
   /// Stop measurement and return results
   GpsMeasurementResult stopMeasurement() {
     _isRunning = false;
 
-    // Cancel subscriptions
+    // Cancel GPS subscription
     _gpsSubscription?.cancel();
-    _accelSubscription?.cancel();
-    _gyroSubscription?.cancel();
     _gpsSubscription = null;
-    _accelSubscription = null;
-    _gyroSubscription = null;
 
     final elapsed = _startTime != null
         ? DateTime.now().difference(_startTime!).inMilliseconds / 1000.0
         : 0.0;
 
     final avgSpeed = elapsed > 0 ? _totalDistance / elapsed : 0.0;
-
-    // Calculate stride statistics
-    final avgCadence = elapsed > 0 ? (_stepCount / elapsed) * 60.0 : 0.0;
-    final avgStrideLength = _stepCount > 0 ? _totalDistance / _stepCount : 0.0;
-    final avgVerticalOscillation = _oscillationSamples > 0
-        ? _totalVerticalOscillation / _oscillationSamples
-        : 0.0;
 
     return GpsMeasurementResult(
       elapsedTime: elapsed,
@@ -689,11 +548,7 @@ class GpsSensorMeasurement {
       estimatedAccuracy: _calculateTimeAccuracy(),
       trackPoints: List.from(_trackPoints),
       speedProfile: List.from(_speedSamples),
-      totalSteps: _stepCount,
-      averageCadence: avgCadence,
-      averageStrideLength: avgStrideLength,
-      averageVerticalOscillation: avgVerticalOscillation,
-      strideProfile: List.from(_strideSamples),
+      gpsUpdateCount: _gpsAccuracyCount,
     );
   }
 
@@ -721,11 +576,13 @@ class GpsSensorMeasurement {
       _kalman.initialize(position.latitude, position.longitude);
     }
 
-    // Update Kalman filter with GPS
+    // Update Kalman filter with GPS (including speed and heading if available)
     _kalman.updateWithGPS(
       position.latitude,
       position.longitude,
       position.accuracy,
+      gpsSpeed: position.speed,
+      gpsHeading: position.heading,
     );
 
     // Calculate distance from last point
@@ -750,110 +607,6 @@ class GpsSensorMeasurement {
     // Broadcast updates
     _distanceController.add(_totalDistance);
     _speedController.add(speed);
-
-    // Check for goal
-    _checkGoal(speed);
-  }
-
-  void _onAccelerometerUpdate(AccelerometerEvent event) {
-    if (!_isRunning) return;
-
-    // Remove bias and gravity
-    final ax = event.x - _accelBiasX;
-    final ay = event.y - _accelBiasY;
-    final az = event.z - _accelBiasZ; // Vertical acceleration (gravity removed)
-
-    // Transform to world frame using orientation
-    final worldAccel = _orientation.transformToWorld(ax, ay);
-
-    // Update Kalman filter with accelerometer
-    _kalman.updateWithAccelerometer(worldAccel[0], worldAccel[1]);
-
-    // Step detection using vertical acceleration
-    _detectStep(az);
-  }
-
-  void _detectStep(double verticalAccel) {
-    // Add to buffer for smoothing
-    _verticalAccelBuffer.add(verticalAccel);
-    if (_verticalAccelBuffer.length > _verticalBufferSize) {
-      _verticalAccelBuffer.removeAt(0);
-    }
-
-    // Track min/max for vertical oscillation
-    if (verticalAccel < _currentMinZ) _currentMinZ = verticalAccel;
-    if (verticalAccel > _currentMaxZ) _currentMaxZ = verticalAccel;
-
-    // Need enough samples for detection
-    if (_verticalAccelBuffer.length < _verticalBufferSize) return;
-
-    // Calculate smoothed acceleration
-    final smoothedAccel = _verticalAccelBuffer.reduce((a, b) => a + b) / _verticalAccelBuffer.length;
-
-    // Step detection using peak detection
-    // Threshold for running: ~2-4 m/s² vertical acceleration
-    const peakThreshold = 2.0;
-    const valleyThreshold = -1.0;
-
-    if (_lookingForPeak) {
-      // Looking for upward peak (foot strike)
-      if (smoothedAccel > peakThreshold && smoothedAccel > _lastVerticalPeak) {
-        _lastVerticalPeak = smoothedAccel;
-      } else if (_lastVerticalPeak > peakThreshold && smoothedAccel < _lastVerticalPeak - 0.5) {
-        // Peak detected - count step
-        _stepCount++;
-        _lookingForPeak = false;
-
-        // Calculate cadence
-        final now = DateTime.now();
-        double cadence = 0.0;
-        if (_lastStepTime != null) {
-          final stepInterval = now.difference(_lastStepTime!).inMilliseconds / 1000.0;
-          if (stepInterval > 0.1 && stepInterval < 1.0) {
-            cadence = 60.0 / stepInterval; // steps per minute
-          }
-        }
-        _lastStepTime = now;
-
-        // Calculate vertical oscillation (peak to trough in cm)
-        final oscillation = (_currentMaxZ - _currentMinZ) * 10.0; // Convert to approximate cm
-        if (oscillation > 0 && oscillation < 20) { // Reasonable range
-          _totalVerticalOscillation += oscillation;
-          _oscillationSamples++;
-        }
-
-        // Record stride sample
-        if (_strideSamples.isEmpty ||
-            _totalDistance - _strideSamples.last.distance >= 10.0) {
-          final avgOscillation = _oscillationSamples > 0
-              ? _totalVerticalOscillation / _oscillationSamples
-              : 0.0;
-          _strideSamples.add(StrideSample(
-            distance: _totalDistance,
-            stepCount: _stepCount,
-            cadence: cadence,
-            verticalOscillation: avgOscillation,
-            timestamp: now,
-          ));
-        }
-
-        // Reset for next step
-        _currentMinZ = 0.0;
-        _currentMaxZ = 0.0;
-        _lastVerticalPeak = 0.0;
-      }
-    } else {
-      // Looking for valley (flight phase)
-      if (smoothedAccel < valleyThreshold) {
-        _lookingForPeak = true;
-        _lastVerticalPeak = 0.0;
-      }
-    }
-  }
-
-  void _onGyroscopeUpdate(GyroscopeEvent event) {
-    if (!_isRunning) return;
-    _orientation.update(event);
   }
 
   void _updateSpeedData(double speed) {
@@ -877,42 +630,6 @@ class GpsSensorMeasurement {
         timestamp: DateTime.now(),
       ));
     }
-
-    // Update recent speeds buffer for deceleration detection
-    _recentSpeeds.add(speed);
-    if (_recentSpeeds.length > _speedBufferSize) {
-      _recentSpeeds.removeAt(0);
-    }
-  }
-
-  void _checkGoal(double currentSpeed) {
-    // Check if approaching goal
-    if (_totalDistance >= targetDistance - 5.0) {
-      _approachingGoal = true;
-    }
-
-    if (_approachingGoal && _totalDistance >= targetDistance) {
-      // Check for deceleration pattern or exceeded distance
-      if (_detectDeceleration() || _totalDistance >= targetDistance + 5.0) {
-        // Goal reached!
-        final result = stopMeasurement();
-        _goalController.add(result);
-      }
-    }
-  }
-
-  bool _detectDeceleration() {
-    if (_recentSpeeds.length < _speedBufferSize) return false;
-
-    // Calculate recent acceleration trend
-    double avgAccel = 0.0;
-    for (int i = 1; i < _recentSpeeds.length; i++) {
-      avgAccel += (_recentSpeeds[i] - _recentSpeeds[i - 1]);
-    }
-    avgAccel /= (_recentSpeeds.length - 1);
-
-    // Significant deceleration threshold
-    return avgAccel < -0.3;
   }
 
   double _calculateTimeAccuracy() {
@@ -942,18 +659,14 @@ class GpsSensorMeasurement {
 
   /// Get current state
   bool get isRunning => _isRunning;
-  bool get isCalibrating => _isCalibrating;
   double get currentDistance => _totalDistance;
   double get currentSpeed => _kalman.getSpeed();
 
   /// Dispose resources
   void dispose() {
     _gpsSubscription?.cancel();
-    _accelSubscription?.cancel();
-    _gyroSubscription?.cancel();
     _distanceController.close();
     _speedController.close();
-    _goalController.close();
     _accuracyController.close();
   }
 }
@@ -1272,7 +985,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   bool _timeMeasurementEnabled = false;
 
   // Trigger settings for time measurement
-  // 'tap', 'hardware_button', 'gps_sensor'
+  // 'tap', 'hardware_button'
   String _triggerMethod = 'tap';
 
   // Lag compensation for trigger delay (0.00 - 1.00 seconds)
@@ -1294,7 +1007,6 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   GpsMeasurementResult? _gpsResult;
   StreamSubscription<double>? _gpsDistanceSubscription;
   StreamSubscription<double>? _gpsSpeedSubscription;
-  StreamSubscription<GpsMeasurementResult>? _gpsGoalSubscription;
   double _gpsCurrentDistance = 0.0;
   double _gpsCurrentSpeed = 0.0;
 
@@ -1307,6 +1019,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   String _calibrationPhase = 'idle'; // 'idle', 'countdown', 'calibrating', 'complete'
   double _calibrationRemainingSeconds = 0.0;
   Timer? _calibrationTimer;
+  Timer? _reactionStartTimer; // Timer to delay reaction listening until 1s before GO
 
   // Hardware button listener instance and subscription
   final _hardwareButtonListener = HardwareButtonListener();
@@ -1430,6 +1143,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     _volumeKeySubscription?.cancel();
     _hardwareButtonSubscription?.cancel();
     _calibrationTimer?.cancel();
+    _reactionStartTimer?.cancel();
     _progressController.dispose();
     _player.dispose();
     _buzzerPlayer.dispose();
@@ -1461,8 +1175,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     final timeMeasurementEnabled =
         prefs.getBool('time_measurement_enabled') ?? _timeMeasurementEnabled;
     var triggerMethod = prefs.getString('trigger_method') ?? _triggerMethod;
-    // Migrate old trigger methods to new ones
-    final validMethods = ['tap', 'hardware_button', 'gps_sensor'];
+    // Migrate old trigger methods to new ones (gps_sensor removed)
+    final validMethods = ['tap', 'hardware_button'];
     if (!validMethods.contains(triggerMethod)) {
       triggerMethod = 'tap';
     }
@@ -1784,17 +1498,26 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         return;
       }
 
-      // Start accelerometer listening BEFORE GO for reaction measurement
+      // Schedule accelerometer listening to start 1 second before GO
+      // This prevents false flying detection from slow movements during Set phase
       if (_timeMeasurementEnabled &&
           (_measurementTarget == 'reaction' ||
               _measurementTarget == 'goal_and_reaction')) {
-        _startReactionListening();
-      }
-
-      // Check if flying was detected during Set phase countdown
-      if (_isFlying) {
-        // Flying already detected - don't play Go, just return
-        return;
+        _reactionStartTimer?.cancel();
+        final delayBeforeListening = (panDelay - 1.0).clamp(0.0, panDelay);
+        if (delayBeforeListening > 0) {
+          _reactionStartTimer = Timer(
+            Duration(milliseconds: (delayBeforeListening * 1000).round()),
+            () {
+              if (mounted && runId == _runToken && !_isFlying) {
+                _startReactionListening();
+              }
+            },
+          );
+        } else {
+          // If panDelay <= 1 second, start immediately
+          _startReactionListening();
+        }
       }
 
       final panOk = await _runPhase(
@@ -1913,13 +1636,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
 
   /// Check if calibration is needed for the current measurement settings
   bool _needsCalibration() {
-    // Calibration is needed for goal/goal_and_reaction measurements when:
-    // 1. Detailed info is enabled, OR
-    // 2. Trigger method is GPS & Sensor
+    // Calibration is needed for goal/goal_and_reaction measurements when detailed info is enabled
     if (_measurementTarget != 'goal' && _measurementTarget != 'goal_and_reaction') {
       return false;
     }
-    return _detailedInfoEnabled || _triggerMethod == 'gps_sensor';
+    return _detailedInfoEnabled;
   }
 
   /// Start the calibration flow before measurement
@@ -1975,16 +1696,13 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     });
   }
 
-  /// Perform the actual calibration (GPS warmup + sensor calibration)
+  /// Perform the actual calibration (GPS warmup)
   Future<void> _performCalibration() async {
     if (!_isInCalibrationPhase) return;
 
     try {
-      // Run GPS warmup and sensor calibration in parallel
-      final warmupFuture = _gpsMeasurement!.warmup(timeout: const Duration(seconds: 10));
-      final calibrationFuture = _gpsMeasurement!.calibrateSensors(duration: const Duration(seconds: 3));
-
-      await Future.wait([warmupFuture, calibrationFuture]);
+      // Run GPS warmup
+      await _gpsMeasurement!.warmup(timeout: const Duration(seconds: 10));
 
       if (!_isInCalibrationPhase) return; // Check if cancelled
 
@@ -2070,7 +1788,6 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       // Subscribe to GPS updates
       _gpsDistanceSubscription?.cancel();
       _gpsSpeedSubscription?.cancel();
-      _gpsGoalSubscription?.cancel();
 
       _gpsDistanceSubscription = _gpsMeasurement!.distanceStream.listen((distance) {
         if (mounted) {
@@ -2085,14 +1802,6 @@ class _StartCallHomePageState extends State<StartCallHomePage>
           setState(() {
             _gpsCurrentSpeed = speed;
           });
-        }
-      });
-
-      _gpsGoalSubscription = _gpsMeasurement!.goalStream.listen((result) {
-        if (mounted) {
-          _gpsResult = result;
-          _measuredTime = result.elapsedTime;
-          _stopTimeMeasurement();
         }
       });
 
@@ -2132,13 +1841,13 @@ class _StartCallHomePageState extends State<StartCallHomePage>
   }
 
   void _stopTimeMeasurement() {
+    _reactionStartTimer?.cancel();
     if (!_isMeasuring && _measuredTime == null && _reactionTime == null) {
       _volumeKeySubscription?.cancel();
       _hardwareButtonSubscription?.cancel();
       _accelerometerSubscription?.cancel();
       _gpsDistanceSubscription?.cancel();
       _gpsSpeedSubscription?.cancel();
-      _gpsGoalSubscription?.cancel();
       return;
     }
 
@@ -2148,7 +1857,6 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     _accelerometerSubscription?.cancel();
     _gpsDistanceSubscription?.cancel();
     _gpsSpeedSubscription?.cancel();
-    _gpsGoalSubscription?.cancel();
 
     // Stop GPS measurement if running (always used for goal measurements)
     if ((_measurementTarget == 'goal' || _measurementTarget == 'goal_and_reaction') &&
@@ -2249,6 +1957,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
 
   // Stop everything when flying is detected
   void _stopFlyingDetected() {
+    _reactionStartTimer?.cancel();
     _accelerometerSubscription?.cancel();
     _volumeKeySubscription?.cancel();
     _hardwareButtonSubscription?.cancel();
@@ -2342,9 +2051,9 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     final isDark = themeNotifier.value;
     final modeColor = _getMeasurementTargetColor();
 
-    // Check if GPS/sensors will be used for this measurement
+    // Check if GPS will be used for this measurement
     final isGoalMode = _measurementTarget == 'goal' || _measurementTarget == 'goal_and_reaction';
-    final willUseGpsSensors = isGoalMode && (_detailedInfoEnabled || _triggerMethod == 'gps_sensor');
+    final willUseGpsSensors = isGoalMode && _detailedInfoEnabled;
 
     showDialog(
       context: context,
@@ -2416,21 +2125,6 @@ class _StartCallHomePageState extends State<StartCallHomePage>
                     _detailedInfoEnabled ? 'オン' : 'オフ',
                     isDark,
                   ),
-                  // Show distance and course type only for GPS & Sensor trigger
-                  if (_triggerMethod == 'gps_sensor') ...[
-                    const SizedBox(height: 10),
-                    _buildInfoRow(
-                      '計測距離',
-                      '${_gpsTargetDistance.toInt()}m',
-                      isDark,
-                    ),
-                    const SizedBox(height: 10),
-                    _buildInfoRow(
-                      'コースタイプ',
-                      _gpsCourseType == 'track' ? 'トラック' : '直線',
-                      isDark,
-                    ),
-                  ],
                   // Show calibration countdown when GPS/sensors will be used
                   if (willUseGpsSensors) ...[
                     const SizedBox(height: 10),
@@ -2583,6 +2277,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         'topSpeed': _gpsResult!.topSpeed,
         'averageSpeed': _gpsResult!.averageSpeed,
         'estimatedAccuracy': _gpsResult!.estimatedAccuracy,
+        'gpsUpdateCount': _gpsResult!.gpsUpdateCount,
         'trackPoints': _gpsResult!.trackPoints
             .where((p) => _gpsResult!.trackPoints.indexOf(p) %
                     max(1, _gpsResult!.trackPoints.length ~/ 100) ==
@@ -2590,12 +2285,6 @@ class _StartCallHomePageState extends State<StartCallHomePage>
             .map((p) => p.toJson())
             .toList(),
         'speedProfile': _gpsResult!.speedProfile.map((s) => s.toJson()).toList(),
-        // Stride data
-        'totalSteps': _gpsResult!.totalSteps,
-        'averageCadence': _gpsResult!.averageCadence,
-        'averageStrideLength': _gpsResult!.averageStrideLength,
-        'averageVerticalOscillation': _gpsResult!.averageVerticalOscillation,
-        'strideProfile': _gpsResult!.strideProfile.map((s) => s.toJson()).toList(),
       };
     }
 
@@ -2828,48 +2517,6 @@ class _StartCallHomePageState extends State<StartCallHomePage>
           trackPoints.add({'lat': lat, 'lon': lon, 't': date.millisecondsSinceEpoch + (d / averageSpeed * 1000).round()});
         }
 
-        // Generate stride profile (realistic running cadence ~180-220 spm for sprinting)
-        final strideProfile = <Map<String, dynamic>>[];
-        int cumulativeSteps = 0;
-        final baseCadence = 180 + random.nextInt(40); // 180-220 spm base
-        final baseVerticalOscillation = 6.0 + random.nextDouble() * 4.0; // 6-10 cm base
-
-        for (int j = 0; j <= numPoints; j++) {
-          final d = j * 10.0;
-          if (d == 0) {
-            strideProfile.add({
-              'distance': d,
-              'stepCount': 0,
-              'cadence': 0.0,
-              'verticalOscillation': 0.0,
-            });
-          } else {
-            // Calculate steps for this 10m segment based on speed and stride length
-            final segmentSpeed = speedProfile[j]['speed'] as double;
-            final strideLength = 1.0 + segmentSpeed * 0.15; // ~1.5-2.5m stride at sprint speed
-            final stepsInSegment = (10.0 / strideLength).round();
-            cumulativeSteps += stepsInSegment;
-
-            // Cadence varies with speed (higher speed = higher cadence)
-            final cadence = baseCadence + (segmentSpeed / topSpeed) * 20 - 10 + random.nextDouble() * 10;
-
-            // Vertical oscillation (tends to be lower at higher speeds for efficient running)
-            final verticalOsc = baseVerticalOscillation - (segmentSpeed / topSpeed) * 2 + random.nextDouble() * 1.5;
-
-            strideProfile.add({
-              'distance': d,
-              'stepCount': cumulativeSteps,
-              'cadence': double.parse(cadence.toStringAsFixed(1)),
-              'verticalOscillation': double.parse(verticalOsc.toStringAsFixed(2)),
-            });
-          }
-        }
-
-        final totalSteps = cumulativeSteps;
-        final averageCadence = strideProfile.where((s) => (s['cadence'] as double) > 0).map((s) => s['cadence'] as double).fold(0.0, (a, b) => a + b) / (numPoints > 0 ? numPoints : 1);
-        final averageStrideLength = distance / totalSteps * 100; // in cm
-        final averageVerticalOscillation = strideProfile.where((s) => (s['verticalOscillation'] as double) > 0).map((s) => s['verticalOscillation'] as double).fold(0.0, (a, b) => a + b) / (numPoints > 0 ? numPoints : 1);
-
         gpsData = {
           'distance': distance,
           'courseType': random.nextBool() ? 'straight' : 'track',
@@ -2880,12 +2527,6 @@ class _StartCallHomePageState extends State<StartCallHomePage>
           'estimatedAccuracy': 0.05 + random.nextDouble() * 0.1,
           'speedProfile': speedProfile,
           'trackPoints': trackPoints,
-          // Stride data
-          'totalSteps': totalSteps,
-          'averageCadence': double.parse(averageCadence.toStringAsFixed(1)),
-          'averageStrideLength': double.parse(averageStrideLength.toStringAsFixed(1)),
-          'averageVerticalOscillation': double.parse(averageVerticalOscillation.toStringAsFixed(2)),
-          'strideProfile': strideProfile,
         };
       }
 
@@ -2893,8 +2534,7 @@ class _StartCallHomePageState extends State<StartCallHomePage>
       if (memo.isEmpty && gpsData != null) {
         final dist = gpsData['distance'] as double;
         final topSpd = gpsData['topSpeed'] as double;
-        final avgCad = gpsData['averageCadence'] as double;
-        memo = '${dist.toInt()}m走 / 最高速度: ${topSpd.toStringAsFixed(1)}m/s / ケイデンス: ${avgCad.toStringAsFixed(0)}spm';
+        memo = '${dist.toInt()}m走 / 最高速度: ${topSpd.toStringAsFixed(1)}m/s';
       }
 
       // Add "詳細あり" tag when gpsData is present
@@ -7088,6 +6728,13 @@ class _LogEditPageState extends State<LogEditPage>
   late TextEditingController _memoController;
   TabController? _tabController;
 
+  // For chart touch tracking
+  double? _touchedDistance;
+  double? _touchedSpeed;
+
+  // Chart display mode: 'distance' or 'time'
+  String _chartMode = 'distance';
+
   bool get hasGpsData => widget.gpsData != null;
 
   @override
@@ -7219,6 +6866,32 @@ class _LogEditPageState extends State<LogEditPage>
               ],
             ),
           ),
+        // Show "計測失敗" when goal_and_reaction mode but no reaction time detected
+        if (widget.reactionTime == null &&
+            widget.tags.contains('リアクション') &&
+            widget.tags.contains('ゴール'))
+          Center(
+            child: Column(
+              children: [
+                if (widget.time != null) const SizedBox(height: 8),
+                Text(
+                  'リアクション',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? Colors.white54 : Colors.black45,
+                  ),
+                ),
+                Text(
+                  '計測失敗',
+                  style: TextStyle(
+                    fontSize: widget.time != null ? 24 : 32,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
         const SizedBox(height: 4),
         Center(
           child: Text(
@@ -7330,16 +7003,8 @@ class _LogEditPageState extends State<LogEditPage>
     final finalSpeed = (gpsData['finalSpeed'] as num?)?.toDouble() ?? 0;
     final topSpeed = (gpsData['topSpeed'] as num?)?.toDouble() ?? 0;
     final averageSpeed = (gpsData['averageSpeed'] as num?)?.toDouble() ?? 0;
-    final estimatedAccuracy =
-        (gpsData['estimatedAccuracy'] as num?)?.toDouble() ?? 0;
     final courseType = gpsData['courseType'] as String? ?? 'straight';
-    // Stride data
-    final totalSteps = (gpsData['totalSteps'] as num?)?.toInt() ?? 0;
-    final averageCadence = (gpsData['averageCadence'] as num?)?.toDouble() ?? 0;
-    final averageStrideLength =
-        (gpsData['averageStrideLength'] as num?)?.toDouble() ?? 0;
-    final averageVerticalOscillation =
-        (gpsData['averageVerticalOscillation'] as num?)?.toDouble() ?? 0;
+    final gpsUpdateCount = (gpsData['gpsUpdateCount'] as num?)?.toInt() ?? 0;
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -7390,49 +7055,10 @@ class _LogEditPageState extends State<LogEditPage>
                   Icons.speed, isDark),
               _buildStatItem('平均速度', '${averageSpeed.toStringAsFixed(1)} m/s',
                   Icons.av_timer, isDark),
-              _buildStatItem('推定精度', '±${estimatedAccuracy.toStringAsFixed(2)}秒',
-                  Icons.precision_manufacturing, isDark),
+              _buildStatItem('GPS更新', '$gpsUpdateCount回',
+                  Icons.update, isDark),
             ],
           ),
-          // Stride data section
-          if (totalSteps > 0) ...[
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Icon(
-                  Icons.directions_run,
-                  color: const Color(0xFF4CAF50),
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'ランニングデータ',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black87,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 16,
-              runSpacing: 12,
-              children: [
-                _buildStatItem(
-                    '歩数', '$totalSteps 歩', Icons.directions_walk, isDark),
-                _buildStatItem('ケイデンス', '${averageCadence.toStringAsFixed(0)} spm',
-                    Icons.timer, isDark),
-                _buildStatItem(
-                    'ストライド', '${(averageStrideLength * 100).toStringAsFixed(0)} cm',
-                    Icons.straighten, isDark),
-                _buildStatItem(
-                    '垂直振動', '${averageVerticalOscillation.toStringAsFixed(1)} cm',
-                    Icons.height, isDark),
-              ],
-            ),
-          ],
         ],
       ),
     );
@@ -7470,7 +7096,7 @@ class _LogEditPageState extends State<LogEditPage>
     );
   }
 
-  // Build speed-distance chart
+  // Build speed chart (distance or time based)
   Widget _buildSpeedDistanceChart(bool isDark) {
     final gpsData = widget.gpsData!;
     final speedProfileRaw = gpsData['speedProfile'] as List?;
@@ -7486,20 +7112,43 @@ class _LogEditPageState extends State<LogEditPage>
       );
     }
 
-    final speedProfile = speedProfileRaw.map((item) {
+    // Parse speed profile data
+    final rawData = speedProfileRaw.map((item) {
       final map = item as Map<String, dynamic>;
-      return FlSpot(
-        (map['distance'] as num).toDouble(),
-        (map['speed'] as num).toDouble(),
-      );
+      return {
+        'distance': (map['distance'] as num).toDouble(),
+        'speed': (map['speed'] as num).toDouble(),
+      };
     }).toList();
 
-    final maxSpeed = speedProfile
-        .map((s) => s.y)
-        .reduce((a, b) => a > b ? a : b);
-    final maxDistance = speedProfile
-        .map((s) => s.x)
-        .reduce((a, b) => a > b ? a : b);
+    // Calculate time-based data by integrating distance/speed
+    final List<FlSpot> distanceProfile = [];
+    final List<FlSpot> timeProfile = [];
+    double cumulativeTime = 0;
+
+    for (int i = 0; i < rawData.length; i++) {
+      final distance = rawData[i]['distance']!;
+      final speed = rawData[i]['speed']!;
+
+      distanceProfile.add(FlSpot(distance, speed));
+
+      if (i > 0) {
+        final prevDistance = rawData[i - 1]['distance']!;
+        final prevSpeed = rawData[i - 1]['speed']!;
+        final deltaDistance = distance - prevDistance;
+        final avgSpeed = (speed + prevSpeed) / 2;
+        if (avgSpeed > 0) {
+          cumulativeTime += deltaDistance / avgSpeed;
+        }
+      }
+      timeProfile.add(FlSpot(cumulativeTime, speed));
+    }
+
+    final isTimeMode = _chartMode == 'time';
+    final chartData = isTimeMode ? timeProfile : distanceProfile;
+
+    final maxSpeed = chartData.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+    final maxX = chartData.map((s) => s.x).reduce((a, b) => a > b ? a : b);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -7516,140 +7165,303 @@ class _LogEditPageState extends State<LogEditPage>
               Icon(Icons.show_chart, color: const Color(0xFFFFD700), size: 20),
               const SizedBox(width: 8),
               Text(
-                '速度-距離グラフ',
+                isTimeMode ? '速度-時間グラフ' : '速度-距離グラフ',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: isDark ? Colors.white : Colors.black87,
                 ),
               ),
+              const Spacer(),
+              // Touch info display
+              if (_touchedDistance != null && _touchedSpeed != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF3A3A3A) : Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFFFFD700).withAlpha(100),
+                    ),
+                  ),
+                  child: Text(
+                    isTimeMode
+                        ? '${_touchedDistance!.toStringAsFixed(1)}秒: ${_touchedSpeed!.toStringAsFixed(1)} m/s'
+                        : '${_touchedDistance!.toInt()}m: ${_touchedSpeed!.toStringAsFixed(1)} m/s',
+                    style: const TextStyle(
+                      color: Color(0xFFFFD700),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 200,
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: true,
-                  horizontalInterval: 2,
-                  verticalInterval: maxDistance > 0 ? maxDistance / 5 : 20,
-                  getDrawingHorizontalLine: (value) => FlLine(
-                    color: isDark
-                        ? Colors.white.withAlpha(30)
-                        : Colors.black.withAlpha(30),
-                    strokeWidth: 1,
-                  ),
-                  getDrawingVerticalLine: (value) => FlLine(
-                    color: isDark
-                        ? Colors.white.withAlpha(30)
-                        : Colors.black.withAlpha(30),
-                    strokeWidth: 1,
-                  ),
-                ),
-                titlesData: FlTitlesData(
-                  show: true,
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  bottomTitles: AxisTitles(
-                    axisNameWidget: Text(
-                      '距離 (m)',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black45,
+          const SizedBox(height: 8),
+          // Mode toggle buttons
+          Row(
+            children: [
+              _buildChartModeButton('distance', '距離', Icons.straighten, isDark),
+              const SizedBox(width: 8),
+              _buildChartModeButton('time', '時間', Icons.timer, isDark),
+            ],
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // Chart area dimensions (accounting for axis labels)
+              const leftPadding = 40.0; // Left axis reserved size
+              const bottomPadding = 30.0; // Bottom axis reserved size
+              final chartWidth = constraints.maxWidth - leftPadding;
+              const chartHeight = 200.0 - bottomPadding;
+              final effectiveMaxX = maxX > 0 ? maxX : 100.0;
+              final effectiveMaxY = (maxSpeed * 1.1).ceilToDouble();
+
+              // Helper function to interpolate speed at any x position
+              double interpolateSpeed(double x) {
+                if (chartData.isEmpty) return 0;
+                if (x <= chartData.first.x) return chartData.first.y;
+                if (x >= chartData.last.x) return chartData.last.y;
+
+                // Find surrounding points
+                for (int i = 0; i < chartData.length - 1; i++) {
+                  if (chartData[i].x <= x && chartData[i + 1].x >= x) {
+                    final t = (x - chartData[i].x) / (chartData[i + 1].x - chartData[i].x);
+                    return chartData[i].y + t * (chartData[i + 1].y - chartData[i].y);
+                  }
+                }
+                return chartData.last.y;
+              }
+
+              return GestureDetector(
+                onPanStart: (details) {
+                  final localX = details.localPosition.dx - leftPadding;
+                  if (localX >= 0 && localX <= chartWidth) {
+                    final x = (localX / chartWidth) * effectiveMaxX;
+                    final clampedX = x.clamp(0.0, effectiveMaxX);
+                    setState(() {
+                      _touchedDistance = clampedX;
+                      _touchedSpeed = interpolateSpeed(clampedX);
+                    });
+                  }
+                },
+                onPanUpdate: (details) {
+                  final localX = details.localPosition.dx - leftPadding;
+                  if (localX >= 0 && localX <= chartWidth) {
+                    final x = (localX / chartWidth) * effectiveMaxX;
+                    final clampedX = x.clamp(0.0, effectiveMaxX);
+                    setState(() {
+                      _touchedDistance = clampedX;
+                      _touchedSpeed = interpolateSpeed(clampedX);
+                    });
+                  }
+                },
+                onTapDown: (details) {
+                  final localX = details.localPosition.dx - leftPadding;
+                  if (localX >= 0 && localX <= chartWidth) {
+                    final x = (localX / chartWidth) * effectiveMaxX;
+                    final clampedX = x.clamp(0.0, effectiveMaxX);
+                    setState(() {
+                      _touchedDistance = clampedX;
+                      _touchedSpeed = interpolateSpeed(clampedX);
+                    });
+                  }
+                },
+                child: SizedBox(
+                  height: 200,
+                  child: LineChart(
+                    LineChartData(
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: true,
+                        horizontalInterval: 2,
+                        verticalInterval: effectiveMaxX / 5,
+                        getDrawingHorizontalLine: (value) => FlLine(
+                          color: isDark
+                              ? Colors.white.withAlpha(30)
+                              : Colors.black.withAlpha(30),
+                          strokeWidth: 1,
+                        ),
+                        getDrawingVerticalLine: (value) => FlLine(
+                          color: isDark
+                              ? Colors.white.withAlpha(30)
+                              : Colors.black.withAlpha(30),
+                          strokeWidth: 1,
+                        ),
+                      ),
+                      titlesData: FlTitlesData(
+                        show: true,
+                        rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        bottomTitles: AxisTitles(
+                          axisNameWidget: Text(
+                            isTimeMode ? '時間 (秒)' : '距離 (m)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white54 : Colors.black45,
+                            ),
+                          ),
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 30,
+                            interval: effectiveMaxX / 5,
+                            getTitlesWidget: (value, meta) {
+                              return Text(
+                                isTimeMode ? value.toStringAsFixed(1) : value.toInt().toString(),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isDark ? Colors.white54 : Colors.black45,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        leftTitles: AxisTitles(
+                          axisNameWidget: Text(
+                            '速度 (m/s)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white54 : Colors.black45,
+                            ),
+                          ),
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 40,
+                            interval: 2,
+                            getTitlesWidget: (value, meta) {
+                              return Text(
+                                value.toInt().toString(),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isDark ? Colors.white54 : Colors.black45,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      borderData: FlBorderData(
+                        show: true,
+                        border: Border.all(
+                          color: isDark
+                              ? Colors.white.withAlpha(50)
+                              : Colors.black.withAlpha(50),
+                        ),
+                      ),
+                      minX: 0,
+                      maxX: effectiveMaxX,
+                      minY: 0,
+                      maxY: effectiveMaxY,
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: chartData,
+                          isCurved: true,
+                          color: const Color(0xFFFFD700),
+                          barWidth: 3,
+                          isStrokeCapRound: true,
+                          dotData: const FlDotData(show: false),
+                          belowBarData: BarAreaData(
+                            show: true,
+                            color: const Color(0xFFFFD700).withAlpha(50),
+                          ),
+                        ),
+                        // Show persistent dot at touched point
+                        if (_touchedDistance != null && _touchedSpeed != null)
+                          LineChartBarData(
+                            spots: [FlSpot(_touchedDistance!, _touchedSpeed!)],
+                            barWidth: 0,
+                            dotData: FlDotData(
+                              show: true,
+                              getDotPainter: (spot, percent, barData, index) {
+                                return FlDotCirclePainter(
+                                  radius: 6,
+                                  color: const Color(0xFFFFD700),
+                                  strokeWidth: 2,
+                                  strokeColor: Colors.white,
+                                );
+                              },
+                            ),
+                          ),
+                      ],
+                      extraLinesData: ExtraLinesData(
+                        verticalLines: _touchedDistance != null
+                            ? [
+                                VerticalLine(
+                                  x: _touchedDistance!,
+                                  color: const Color(0xFFFFD700),
+                                  strokeWidth: 2,
+                                  label: VerticalLineLabel(
+                                    show: false,
+                                  ),
+                                ),
+                              ]
+                            : [],
+                      ),
+                      lineTouchData: const LineTouchData(
+                        enabled: false, // Disable built-in touch - we handle it manually
                       ),
                     ),
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 30,
-                      interval: maxDistance > 0 ? maxDistance / 5 : 20,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toInt().toString(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white54 : Colors.black45,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  leftTitles: AxisTitles(
-                    axisNameWidget: Text(
-                      '速度 (m/s)',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black45,
-                      ),
-                    ),
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 40,
-                      interval: 2,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toInt().toString(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white54 : Colors.black45,
-                          ),
-                        );
-                      },
-                    ),
                   ),
                 ),
-                borderData: FlBorderData(
-                  show: true,
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withAlpha(50)
-                        : Colors.black.withAlpha(50),
-                  ),
-                ),
-                minX: 0,
-                maxX: maxDistance > 0 ? maxDistance : 100,
-                minY: 0,
-                maxY: (maxSpeed * 1.1).ceilToDouble(),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: speedProfile,
-                    isCurved: true,
-                    color: const Color(0xFFFFD700),
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      color: const Color(0xFFFFD700).withAlpha(50),
-                    ),
-                  ),
-                ],
-                lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                    tooltipBgColor:
-                        isDark ? const Color(0xFF3A3A3A) : Colors.white,
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((spot) {
-                        return LineTooltipItem(
-                          '${spot.x.toInt()}m: ${spot.y.toStringAsFixed(1)} m/s',
-                          TextStyle(
-                            color: const Color(0xFFFFD700),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        );
-                      }).toList();
-                    },
-                  ),
-                ),
-              ),
-            ),
+              );
+            },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildChartModeButton(String mode, String label, IconData icon, bool isDark) {
+    final isSelected = _chartMode == mode;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _chartMode = mode;
+          _touchedDistance = null;
+          _touchedSpeed = null;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFFFFD700).withAlpha(30)
+              : (isDark ? const Color(0xFF3A3A3A) : Colors.white),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFFFFD700)
+                : (isDark ? const Color(0xFF4A4A4A) : const Color(0xFFE0E0E0)),
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected
+                  ? const Color(0xFFFFD700)
+                  : (isDark ? Colors.white54 : Colors.black45),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: isSelected
+                    ? const Color(0xFFFFD700)
+                    : (isDark ? Colors.white70 : Colors.black54),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -7750,363 +7562,7 @@ class _LogEditPageState extends State<LogEditPage>
     );
   }
 
-  // Build cadence chart (steps per minute over distance)
-  Widget _buildCadenceChart(bool isDark) {
-    final gpsData = widget.gpsData!;
-    final strideProfileRaw = gpsData['strideProfile'] as List?;
-
-    if (strideProfileRaw == null || strideProfileRaw.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final cadenceProfile = strideProfileRaw.map((item) {
-      final map = item as Map<String, dynamic>;
-      return FlSpot(
-        (map['distance'] as num).toDouble(),
-        (map['cadence'] as num).toDouble(),
-      );
-    }).toList();
-
-    if (cadenceProfile.isEmpty) return const SizedBox.shrink();
-
-    double maxCadence = 0;
-    double maxDistance = 0;
-    for (final spot in cadenceProfile) {
-      if (spot.y > maxCadence) maxCadence = spot.y;
-      if (spot.x > maxDistance) maxDistance = spot.x;
-    }
-
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF5F5F5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.directions_run, color: const Color(0xFF4CAF50), size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'ケイデンス (歩数/分)',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 200,
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: true,
-                  horizontalInterval: 20,
-                  verticalInterval: maxDistance > 0 ? maxDistance / 5 : 20,
-                  getDrawingHorizontalLine: (value) => FlLine(
-                    color: isDark
-                        ? Colors.white.withAlpha(30)
-                        : Colors.black.withAlpha(30),
-                    strokeWidth: 1,
-                  ),
-                  getDrawingVerticalLine: (value) => FlLine(
-                    color: isDark
-                        ? Colors.white.withAlpha(30)
-                        : Colors.black.withAlpha(30),
-                    strokeWidth: 1,
-                  ),
-                ),
-                titlesData: FlTitlesData(
-                  show: true,
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  bottomTitles: AxisTitles(
-                    axisNameWidget: Text(
-                      '距離 (m)',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black45,
-                      ),
-                    ),
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 25,
-                      interval: maxDistance > 0 ? maxDistance / 5 : 20,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toInt().toString(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white54 : Colors.black45,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  leftTitles: AxisTitles(
-                    axisNameWidget: Text(
-                      'spm',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black45,
-                      ),
-                    ),
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 40,
-                      interval: 20,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toInt().toString(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white54 : Colors.black45,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                borderData: FlBorderData(
-                  show: true,
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withAlpha(50)
-                        : Colors.black.withAlpha(50),
-                  ),
-                ),
-                minX: 0,
-                maxX: maxDistance > 0 ? maxDistance : 100,
-                minY: 0,
-                maxY: (maxCadence * 1.1).ceilToDouble(),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: cadenceProfile,
-                    isCurved: true,
-                    color: const Color(0xFF4CAF50),
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      color: const Color(0xFF4CAF50).withAlpha(50),
-                    ),
-                  ),
-                ],
-                lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                    tooltipBgColor:
-                        isDark ? const Color(0xFF3A3A3A) : Colors.white,
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((spot) {
-                        return LineTooltipItem(
-                          '${spot.x.toInt()}m: ${spot.y.toStringAsFixed(0)} spm',
-                          TextStyle(
-                            color: const Color(0xFF4CAF50),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        );
-                      }).toList();
-                    },
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Build vertical oscillation chart (cm over distance)
-  Widget _buildVerticalOscillationChart(bool isDark) {
-    final gpsData = widget.gpsData!;
-    final strideProfileRaw = gpsData['strideProfile'] as List?;
-
-    if (strideProfileRaw == null || strideProfileRaw.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final oscillationProfile = strideProfileRaw.map((item) {
-      final map = item as Map<String, dynamic>;
-      return FlSpot(
-        (map['distance'] as num).toDouble(),
-        (map['verticalOscillation'] as num).toDouble(),
-      );
-    }).toList();
-
-    if (oscillationProfile.isEmpty) return const SizedBox.shrink();
-
-    double maxOscillation = 0;
-    double maxDistance = 0;
-    for (final spot in oscillationProfile) {
-      if (spot.y > maxOscillation) maxOscillation = spot.y;
-      if (spot.x > maxDistance) maxDistance = spot.x;
-    }
-
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF5F5F5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.swap_vert, color: const Color(0xFF9C27B0), size: 20),
-              const SizedBox(width: 8),
-              Text(
-                '垂直振動 (cm)',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 200,
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: true,
-                  horizontalInterval: 2,
-                  verticalInterval: maxDistance > 0 ? maxDistance / 5 : 20,
-                  getDrawingHorizontalLine: (value) => FlLine(
-                    color: isDark
-                        ? Colors.white.withAlpha(30)
-                        : Colors.black.withAlpha(30),
-                    strokeWidth: 1,
-                  ),
-                  getDrawingVerticalLine: (value) => FlLine(
-                    color: isDark
-                        ? Colors.white.withAlpha(30)
-                        : Colors.black.withAlpha(30),
-                    strokeWidth: 1,
-                  ),
-                ),
-                titlesData: FlTitlesData(
-                  show: true,
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  bottomTitles: AxisTitles(
-                    axisNameWidget: Text(
-                      '距離 (m)',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black45,
-                      ),
-                    ),
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 25,
-                      interval: maxDistance > 0 ? maxDistance / 5 : 20,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toInt().toString(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white54 : Colors.black45,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  leftTitles: AxisTitles(
-                    axisNameWidget: Text(
-                      'cm',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black45,
-                      ),
-                    ),
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 40,
-                      interval: 2,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toStringAsFixed(0),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white54 : Colors.black45,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                borderData: FlBorderData(
-                  show: true,
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withAlpha(50)
-                        : Colors.black.withAlpha(50),
-                  ),
-                ),
-                minX: 0,
-                maxX: maxDistance > 0 ? maxDistance : 100,
-                minY: 0,
-                maxY: (maxOscillation * 1.2).ceilToDouble(),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: oscillationProfile,
-                    isCurved: true,
-                    color: const Color(0xFF9C27B0),
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      color: const Color(0xFF9C27B0).withAlpha(50),
-                    ),
-                  ),
-                ],
-                lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                    tooltipBgColor:
-                        isDark ? const Color(0xFF3A3A3A) : Colors.white,
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((spot) {
-                        return LineTooltipItem(
-                          '${spot.x.toInt()}m: ${spot.y.toStringAsFixed(1)} cm',
-                          TextStyle(
-                            color: const Color(0xFF9C27B0),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        );
-                      }).toList();
-                    },
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // _buildCadenceChart and _buildVerticalOscillationChart removed (stride data not collected)
 
   // Build the graph tab content
   Widget _buildGraphTab(bool isDark, String dateStr) {
@@ -8119,8 +7575,6 @@ class _LogEditPageState extends State<LogEditPage>
           _buildGpsStatsCard(isDark),
           _buildSpeedDistanceChart(isDark),
           const SizedBox(height: 16),
-          _buildCadenceChart(isDark),
-          _buildVerticalOscillationChart(isDark),
           _buildTrackMap(isDark),
           const SizedBox(height: 32),
         ],
@@ -8176,6 +7630,7 @@ class _LogEditPageState extends State<LogEditPage>
           body: hasGpsData
               ? TabBarView(
                   controller: _tabController,
+                  physics: const NeverScrollableScrollPhysics(),
                   children: [
                     _buildMemoTab(isDark, dateStr),
                     _buildGraphTab(isDark, dateStr),
@@ -8345,10 +7800,6 @@ class LogComparisonPage extends StatelessWidget {
                 _buildLegend(isDark),
                 const SizedBox(height: 16),
                 _buildComparisonChart(isDark),
-                const SizedBox(height: 16),
-                _buildCadenceComparisonChart(isDark),
-                const SizedBox(height: 16),
-                _buildVerticalOscillationComparisonChart(isDark),
                 const SizedBox(height: 24),
                 _buildStatsTable(isDark),
                 const SizedBox(height: 32),
@@ -8580,9 +8031,15 @@ class LogComparisonPage extends StatelessWidget {
                   );
                 }).toList(),
                 lineTouchData: LineTouchData(
+                  enabled: true,
+                  handleBuiltInTouches: true,
+                  touchSpotThreshold: 50,
                   touchTooltipData: LineTouchTooltipData(
                     tooltipBgColor:
                         isDark ? const Color(0xFF3A3A3A) : Colors.white,
+                    fitInsideHorizontally: true,
+                    fitInsideVertically: true,
+                    tooltipMargin: 10,
                     getTooltipItems: (touchedSpots) {
                       return touchedSpots.map((spot) {
                         final color = _colors[spot.barIndex % _colors.length];
@@ -8591,373 +8048,7 @@ class LogComparisonPage extends StatelessWidget {
                           TextStyle(
                             color: color,
                             fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        );
-                      }).toList();
-                    },
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Build cadence comparison chart
-  Widget _buildCadenceComparisonChart(bool isDark) {
-    final allProfiles = <int, List<FlSpot>>{};
-    double maxCadence = 0;
-    double maxDistance = 0;
-
-    for (int i = 0; i < logs.length; i++) {
-      final gpsData = logs[i]['gpsData'] as Map<String, dynamic>?;
-      if (gpsData == null) continue;
-
-      final strideProfileRaw = gpsData['strideProfile'] as List?;
-      if (strideProfileRaw == null || strideProfileRaw.isEmpty) continue;
-
-      final profile = strideProfileRaw.map((item) {
-        final map = item as Map<String, dynamic>;
-        return FlSpot(
-          (map['distance'] as num).toDouble(),
-          (map['cadence'] as num).toDouble(),
-        );
-      }).toList();
-
-      allProfiles[i] = profile;
-
-      for (final spot in profile) {
-        if (spot.y > maxCadence) maxCadence = spot.y;
-        if (spot.x > maxDistance) maxDistance = spot.x;
-      }
-    }
-
-    if (allProfiles.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF5F5F5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.directions_run, color: const Color(0xFF4CAF50), size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'ケイデンス比較 (歩数/分)',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 200,
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: true,
-                  horizontalInterval: 20,
-                  verticalInterval: maxDistance > 0 ? maxDistance / 5 : 20,
-                  getDrawingHorizontalLine: (value) => FlLine(
-                    color: isDark
-                        ? Colors.white.withAlpha(30)
-                        : Colors.black.withAlpha(30),
-                    strokeWidth: 1,
-                  ),
-                  getDrawingVerticalLine: (value) => FlLine(
-                    color: isDark
-                        ? Colors.white.withAlpha(30)
-                        : Colors.black.withAlpha(30),
-                    strokeWidth: 1,
-                  ),
-                ),
-                titlesData: FlTitlesData(
-                  show: true,
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  bottomTitles: AxisTitles(
-                    axisNameWidget: Text(
-                      '距離 (m)',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black45,
-                      ),
-                    ),
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 30,
-                      interval: maxDistance > 0 ? maxDistance / 5 : 20,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toInt().toString(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white54 : Colors.black45,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  leftTitles: AxisTitles(
-                    axisNameWidget: Text(
-                      'spm',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black45,
-                      ),
-                    ),
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 40,
-                      interval: 20,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toInt().toString(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white54 : Colors.black45,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                borderData: FlBorderData(
-                  show: true,
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withAlpha(50)
-                        : Colors.black.withAlpha(50),
-                  ),
-                ),
-                minX: 0,
-                maxX: maxDistance > 0 ? maxDistance : 100,
-                minY: 0,
-                maxY: (maxCadence * 1.1).ceilToDouble(),
-                lineBarsData: allProfiles.entries.map((entry) {
-                  return LineChartBarData(
-                    spots: entry.value,
-                    isCurved: true,
-                    color: _colors[entry.key % _colors.length],
-                    barWidth: 2.5,
-                    isStrokeCapRound: true,
-                    dotData: const FlDotData(show: false),
-                  );
-                }).toList(),
-                lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                    tooltipBgColor:
-                        isDark ? const Color(0xFF3A3A3A) : Colors.white,
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((spot) {
-                        final color = _colors[spot.barIndex % _colors.length];
-                        return LineTooltipItem(
-                          '${spot.x.toInt()}m: ${spot.y.toStringAsFixed(0)} spm',
-                          TextStyle(
-                            color: color,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        );
-                      }).toList();
-                    },
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Build vertical oscillation comparison chart
-  Widget _buildVerticalOscillationComparisonChart(bool isDark) {
-    final allProfiles = <int, List<FlSpot>>{};
-    double maxOscillation = 0;
-    double maxDistance = 0;
-
-    for (int i = 0; i < logs.length; i++) {
-      final gpsData = logs[i]['gpsData'] as Map<String, dynamic>?;
-      if (gpsData == null) continue;
-
-      final strideProfileRaw = gpsData['strideProfile'] as List?;
-      if (strideProfileRaw == null || strideProfileRaw.isEmpty) continue;
-
-      final profile = strideProfileRaw.map((item) {
-        final map = item as Map<String, dynamic>;
-        return FlSpot(
-          (map['distance'] as num).toDouble(),
-          (map['verticalOscillation'] as num).toDouble(),
-        );
-      }).toList();
-
-      allProfiles[i] = profile;
-
-      for (final spot in profile) {
-        if (spot.y > maxOscillation) maxOscillation = spot.y;
-        if (spot.x > maxDistance) maxDistance = spot.x;
-      }
-    }
-
-    if (allProfiles.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF5F5F5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.swap_vert, color: const Color(0xFF9C27B0), size: 20),
-              const SizedBox(width: 8),
-              Text(
-                '垂直振動比較 (cm)',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 200,
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: true,
-                  horizontalInterval: 2,
-                  verticalInterval: maxDistance > 0 ? maxDistance / 5 : 20,
-                  getDrawingHorizontalLine: (value) => FlLine(
-                    color: isDark
-                        ? Colors.white.withAlpha(30)
-                        : Colors.black.withAlpha(30),
-                    strokeWidth: 1,
-                  ),
-                  getDrawingVerticalLine: (value) => FlLine(
-                    color: isDark
-                        ? Colors.white.withAlpha(30)
-                        : Colors.black.withAlpha(30),
-                    strokeWidth: 1,
-                  ),
-                ),
-                titlesData: FlTitlesData(
-                  show: true,
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  bottomTitles: AxisTitles(
-                    axisNameWidget: Text(
-                      '距離 (m)',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black45,
-                      ),
-                    ),
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 30,
-                      interval: maxDistance > 0 ? maxDistance / 5 : 20,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toInt().toString(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white54 : Colors.black45,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  leftTitles: AxisTitles(
-                    axisNameWidget: Text(
-                      'cm',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black45,
-                      ),
-                    ),
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 40,
-                      interval: 2,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toStringAsFixed(0),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white54 : Colors.black45,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                borderData: FlBorderData(
-                  show: true,
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withAlpha(50)
-                        : Colors.black.withAlpha(50),
-                  ),
-                ),
-                minX: 0,
-                maxX: maxDistance > 0 ? maxDistance : 100,
-                minY: 0,
-                maxY: (maxOscillation * 1.2).ceilToDouble(),
-                lineBarsData: allProfiles.entries.map((entry) {
-                  return LineChartBarData(
-                    spots: entry.value,
-                    isCurved: true,
-                    color: _colors[entry.key % _colors.length],
-                    barWidth: 2.5,
-                    isStrokeCapRound: true,
-                    dotData: const FlDotData(show: false),
-                  );
-                }).toList(),
-                lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                    tooltipBgColor:
-                        isDark ? const Color(0xFF3A3A3A) : Colors.white,
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((spot) {
-                        final color = _colors[spot.barIndex % _colors.length];
-                        return LineTooltipItem(
-                          '${spot.x.toInt()}m: ${spot.y.toStringAsFixed(1)} cm',
-                          TextStyle(
-                            color: color,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
+                            fontSize: 11,
                           ),
                         );
                       }).toList();
@@ -9021,10 +8112,6 @@ class LogComparisonPage extends StatelessWidget {
                 DataColumn(label: Text('終速', style: headerStyle)),
                 DataColumn(label: Text('最高速度', style: headerStyle)),
                 DataColumn(label: Text('平均速度', style: headerStyle)),
-                DataColumn(label: Text('歩数', style: headerStyle)),
-                DataColumn(label: Text('ケイデンス', style: headerStyle)),
-                DataColumn(label: Text('ストライド', style: headerStyle)),
-                DataColumn(label: Text('垂直振動', style: headerStyle)),
               ],
               rows: List.generate(logs.length, (index) {
                 final log = logs[index];
@@ -9042,14 +8129,6 @@ class LogComparisonPage extends StatelessWidget {
                     (gpsData?['topSpeed'] as num?)?.toDouble() ?? 0;
                 final averageSpeed =
                     (gpsData?['averageSpeed'] as num?)?.toDouble() ?? 0;
-                final totalSteps =
-                    (gpsData?['totalSteps'] as num?)?.toInt() ?? 0;
-                final averageCadence =
-                    (gpsData?['averageCadence'] as num?)?.toDouble() ?? 0;
-                final averageStrideLength =
-                    (gpsData?['averageStrideLength'] as num?)?.toDouble() ?? 0;
-                final averageVerticalOscillation =
-                    (gpsData?['averageVerticalOscillation'] as num?)?.toDouble() ?? 0;
 
                 return DataRow(
                   cells: [
@@ -9086,10 +8165,6 @@ class LogComparisonPage extends StatelessWidget {
                     DataCell(Text('${finalSpeed.toStringAsFixed(1)}', style: cellStyle)),
                     DataCell(Text('${topSpeed.toStringAsFixed(1)}', style: cellStyle)),
                     DataCell(Text('${averageSpeed.toStringAsFixed(1)}', style: cellStyle)),
-                    DataCell(Text(totalSteps > 0 ? '$totalSteps' : '-', style: cellStyle)),
-                    DataCell(Text(averageCadence > 0 ? '${averageCadence.toStringAsFixed(0)}' : '-', style: cellStyle)),
-                    DataCell(Text(averageStrideLength > 0 ? '${averageStrideLength.toStringAsFixed(0)}cm' : '-', style: cellStyle)),
-                    DataCell(Text(averageVerticalOscillation > 0 ? '${averageVerticalOscillation.toStringAsFixed(1)}cm' : '-', style: cellStyle)),
                   ],
                 );
               }),
@@ -9108,16 +8183,478 @@ class LogComparisonPage extends StatelessWidget {
                   color: isDark ? Colors.white38 : Colors.black38,
                 ),
               ),
-              Text(
-                'ケイデンス: spm',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: isDark ? Colors.white38 : Colors.black38,
-                ),
-              ),
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+// Lag Calibration Dialog
+enum _LagCalibrationState { idle, countdown, measuring, completed }
+
+class _LagCalibrationDialog extends StatefulWidget {
+  final bool isDark;
+  final ValueChanged<double> onCalibrated;
+
+  const _LagCalibrationDialog({
+    required this.isDark,
+    required this.onCalibrated,
+  });
+
+  @override
+  State<_LagCalibrationDialog> createState() => _LagCalibrationDialogState();
+}
+
+class _LagCalibrationDialogState extends State<_LagCalibrationDialog> {
+  // Calibration state
+  _LagCalibrationState _state = _LagCalibrationState.idle;
+
+  // Countdown timer
+  int _countdown = 3;
+  Timer? _countdownTimer;
+
+  // Stopwatch for measuring
+  final Stopwatch _stopwatch = Stopwatch();
+  Timer? _displayTimer;
+  double _measuredTime = 0.0;
+
+  // Hardware button listener
+  final _hardwareButtonListener = HardwareButtonListener();
+  StreamSubscription<HardwareButton>? _hardwareButtonSubscription;
+
+  // Volume key event channel for native Android integration
+  static const _volumeKeyChannel = EventChannel(
+    'jp.holmes.track_start_call/volume_keys',
+  );
+  StreamSubscription? _volumeKeySubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _initHardwareButtonListener();
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    _displayTimer?.cancel();
+    _stopwatch.stop();
+    _hardwareButtonSubscription?.cancel();
+    _volumeKeySubscription?.cancel();
+    super.dispose();
+  }
+
+  void _initHardwareButtonListener() {
+    // Listen to native volume key events (intercepted at Android level)
+    _volumeKeySubscription = _volumeKeyChannel
+        .receiveBroadcastStream()
+        .listen((event) {
+          _handleButtonPress();
+        });
+
+    // Also listen to hardware button listener for other hardware buttons
+    _hardwareButtonSubscription = _hardwareButtonListener.listen((event) {
+      _handleButtonPress();
+    });
+  }
+
+  void _handleButtonPress() {
+    if (_state == _LagCalibrationState.measuring) {
+      _stopMeasurement();
+    } else if (_state == _LagCalibrationState.countdown) {
+      // Allow canceling during countdown
+      _cancelCalibration();
+    }
+  }
+
+  void _startCalibration() {
+    setState(() {
+      _state = _LagCalibrationState.countdown;
+      _countdown = 3;
+      _measuredTime = 0.0;
+    });
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        _countdown--;
+      });
+
+      if (_countdown <= 0) {
+        timer.cancel();
+        _startMeasurement();
+      }
+    });
+  }
+
+  void _startMeasurement() {
+    setState(() {
+      _state = _LagCalibrationState.measuring;
+    });
+
+    _stopwatch.reset();
+    _stopwatch.start();
+
+    // Update display every 10ms
+    _displayTimer = Timer.periodic(const Duration(milliseconds: 10), (timer) {
+      if (mounted && _state == _LagCalibrationState.measuring) {
+        setState(() {
+          _measuredTime = _stopwatch.elapsedMilliseconds / 1000.0;
+        });
+      }
+    });
+  }
+
+  void _stopMeasurement() {
+    _stopwatch.stop();
+    _displayTimer?.cancel();
+
+    setState(() {
+      _measuredTime = _stopwatch.elapsedMilliseconds / 1000.0;
+      _state = _LagCalibrationState.completed;
+    });
+  }
+
+  void _cancelCalibration() {
+    _countdownTimer?.cancel();
+    _displayTimer?.cancel();
+    _stopwatch.stop();
+
+    setState(() {
+      _state = _LagCalibrationState.idle;
+      _countdown = 3;
+      _measuredTime = 0.0;
+    });
+  }
+
+  void _restart() {
+    _cancelCalibration();
+    _startCalibration();
+  }
+
+  void _applyCalibration() {
+    widget.onCalibrated(_measuredTime);
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = widget.isDark;
+
+    return Dialog(
+      backgroundColor: isDark ? const Color(0xFF141B26) : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Container(
+        width: 320,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header with close button
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'ラグ計測',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: Icon(
+                    Icons.close,
+                    color: isDark ? Colors.white54 : Colors.black45,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            // Main display area
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _state == _LagCalibrationState.measuring
+                      ? const Color(0xFF00BCD4)
+                      : (isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0)),
+                  width: _state == _LagCalibrationState.measuring ? 2 : 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  if (_state == _LagCalibrationState.idle) ...[
+                    Icon(
+                      Icons.touch_app,
+                      size: 48,
+                      color: isDark ? Colors.white54 : Colors.black45,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '開始を押してください',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: isDark ? Colors.white70 : Colors.black54,
+                      ),
+                    ),
+                  ] else if (_state == _LagCalibrationState.countdown) ...[
+                    Text(
+                      '$_countdown',
+                      style: TextStyle(
+                        fontSize: 72,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFFFF9800),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'カウントダウン中...',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isDark ? Colors.white54 : Colors.black45,
+                      ),
+                    ),
+                  ] else if (_state == _LagCalibrationState.measuring) ...[
+                    Text(
+                      _measuredTime.toStringAsFixed(2),
+                      style: TextStyle(
+                        fontSize: 56,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'monospace',
+                        color: const Color(0xFF00BCD4),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '秒',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: const Color(0xFF00BCD4),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF00BCD4).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.radio_button_checked,
+                            size: 16,
+                            color: const Color(0xFF00BCD4),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'ボタンを押して停止',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF00BCD4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else if (_state == _LagCalibrationState.completed) ...[
+                    Text(
+                      _measuredTime.toStringAsFixed(2),
+                      style: TextStyle(
+                        fontSize: 56,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'monospace',
+                        color: const Color(0xFF4CAF50),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '秒',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: const Color(0xFF4CAF50),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4CAF50).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.check_circle,
+                            size: 16,
+                            color: const Color(0xFF4CAF50),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '計測完了',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF4CAF50),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Instructions
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                _state == _LagCalibrationState.idle
+                    ? 'カウントダウン後、タイマーが開始します。\nボタンを押してタイマーを停止してください。'
+                    : _state == _LagCalibrationState.measuring
+                        ? 'イヤホンボタン、Bluetoothリモコン、\nまたは音量ボタンを押してください'
+                        : _state == _LagCalibrationState.completed
+                            ? 'この値をラグ補正値として設定しますか？'
+                            : 'ボタンを押すとキャンセルできます',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white54 : Colors.black45,
+                  height: 1.5,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Action buttons
+            if (_state == _LagCalibrationState.idle) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _startCalibration,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00BCD4),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    '開始',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ] else if (_state == _LagCalibrationState.completed) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _restart,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF00BCD4),
+                        side: const BorderSide(color: Color(0xFF00BCD4)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'リスタート',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _measuredTime <= 1.0 ? _applyCalibration : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4CAF50),
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        _measuredTime <= 1.0 ? '設定' : '1秒以上',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (_measuredTime > 1.0) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '※ラグは1秒以内である必要があります',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: const Color(0xFFFF5722),
+                  ),
+                ),
+              ],
+            ] else ...[
+              // During countdown or measuring - show cancel button
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: _cancelCalibration,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: isDark ? Colors.white54 : Colors.black45,
+                    side: BorderSide(
+                      color: isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'キャンセル',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -9280,6 +8817,7 @@ class _SettingsPageState extends State<SettingsPage> {
   // Detailed info and calibration settings
   late bool _detailedInfoEnabled;
   late double _calibrationCountdown;
+  bool _lagEnabled = false;
 
   @override
   void initState() {
@@ -9316,6 +8854,8 @@ class _SettingsPageState extends State<SettingsPage> {
     // Detailed info and calibration settings
     _detailedInfoEnabled = widget.detailedInfoEnabled;
     _calibrationCountdown = widget.calibrationCountdown;
+    // Initialize lag enabled based on current lag compensation value
+    _lagEnabled = widget.lagCompensation > 0;
   }
 
   @override
@@ -9377,297 +8917,6 @@ class _SettingsPageState extends State<SettingsPage> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildGpsSensorSettings(bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Distance selection
-        Text(
-          '計測距離',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: isDark ? Colors.white70 : Colors.black54,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _buildDistanceChip(50.0, '50m', isDark),
-            _buildDistanceChip(100.0, '100m', isDark),
-            _buildDistanceChip(200.0, '200m', isDark),
-            _buildDistanceChip(400.0, '400m', isDark),
-            _buildCustomDistanceChip(isDark),
-          ],
-        ),
-        const SizedBox(height: 16),
-        // Course type selection
-        Text(
-          'コースタイプ',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: isDark ? Colors.white70 : Colors.black54,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            _buildCourseTypeChip('straight', '直線', Icons.straighten, isDark),
-            const SizedBox(width: 8),
-            _buildCourseTypeChip('track', 'トラック', Icons.stadium, isDark),
-          ],
-        ),
-        const SizedBox(height: 16),
-        // GPS Warmup section
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: _gpsWarmupComplete
-                  ? const Color(0xFF4CAF50).withOpacity(0.5)
-                  : (isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0)),
-            ),
-          ),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.gps_fixed,
-                    size: 20,
-                    color: _gpsWarmupComplete
-                        ? const Color(0xFF4CAF50)
-                        : (isDark ? Colors.white70 : Colors.black54),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'GPS ウォームアップ',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (_gpsCurrentAccuracy > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _gpsCurrentAccuracy <= 5
-                            ? const Color(0xFF4CAF50).withOpacity(0.2)
-                            : _gpsCurrentAccuracy <= 10
-                                ? const Color(0xFFFF9800).withOpacity(0.2)
-                                : const Color(0xFFF44336).withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${_gpsCurrentAccuracy.toStringAsFixed(1)}m',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _gpsCurrentAccuracy <= 5
-                              ? const Color(0xFF4CAF50)
-                              : _gpsCurrentAccuracy <= 10
-                                  ? const Color(0xFFFF9800)
-                                  : const Color(0xFFF44336),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isGpsWarming ? null : () => _startGpsWarmup(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _gpsWarmupComplete
-                        ? const Color(0xFF4CAF50)
-                        : const Color(0xFF00BCD4),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Text(
-                    _isGpsWarming
-                        ? 'ウォームアップ中...'
-                        : _gpsWarmupComplete
-                            ? '準備完了'
-                            : 'ウォームアップ開始',
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        // Sensor calibration section
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: _gpsSensorCalibrated
-                  ? const Color(0xFF2196F3).withOpacity(0.5)
-                  : (isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0)),
-            ),
-          ),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.tune,
-                    size: 20,
-                    color: _gpsSensorCalibrated
-                        ? const Color(0xFF2196F3)
-                        : (isDark ? Colors.white70 : Colors.black54),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'センサーキャリブレーション',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (_gpsSensorCalibrated)
-                    Icon(
-                      Icons.check_circle,
-                      size: 20,
-                      color: const Color(0xFF2196F3),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'デバイスを静止させてから開始してください',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: isDark ? Colors.white54 : Colors.black45,
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed:
-                      _isSensorCalibrating ? null : () => _startSensorCalibration(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _gpsSensorCalibrated
-                        ? const Color(0xFF2196F3)
-                        : const Color(0xFF00BCD4),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Text(
-                    _isSensorCalibrating
-                        ? 'キャリブレーション中...'
-                        : _gpsSensorCalibrated
-                            ? 'キャリブレーション完了'
-                            : 'キャリブレーション',
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        // Info message
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isDark
-                ? const Color(0xFF1A2332)
-                : const Color(0xFFFFF3E0),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.info_outline,
-                size: 16,
-                color: const Color(0xFFFF9800),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'GPS計測はバッテリー消費が増加します。屋外で使用してください。',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? Colors.white70 : Colors.black54,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // Build GPS trigger settings (distance, course type) - only for gps_sensor trigger
-  Widget _buildGpsTriggerSettings(bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Distance selection
-        Text(
-          '計測距離',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: isDark ? Colors.white70 : Colors.black54,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _buildDistanceChip(50.0, '50m', isDark),
-            _buildDistanceChip(100.0, '100m', isDark),
-            _buildDistanceChip(200.0, '200m', isDark),
-            _buildDistanceChip(400.0, '400m', isDark),
-            _buildCustomDistanceChip(isDark),
-          ],
-        ),
-        const SizedBox(height: 16),
-        // Course type selection
-        Text(
-          'コースタイプ',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: isDark ? Colors.white70 : Colors.black54,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            _buildCourseTypeChip('straight', '直線', Icons.straighten, isDark),
-            const SizedBox(width: 8),
-            _buildCourseTypeChip('track', 'トラック', Icons.stadium, isDark),
-          ],
-        ),
-      ],
     );
   }
 
@@ -9777,192 +9026,20 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildDistanceChip(double distance, String label, bool isDark) {
-    final isSelected = _gpsTargetDistance == distance;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _gpsTargetDistance = distance;
-        });
-        widget.onGpsTargetDistanceChanged(distance);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF4CAF50).withOpacity(0.2)
-              : (isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5)),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected
-                ? const Color(0xFF4CAF50)
-                : (isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0)),
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-            color: isSelected
-                ? const Color(0xFF4CAF50)
-                : (isDark ? Colors.white70 : Colors.black54),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCustomDistanceChip(bool isDark) {
-    final isCustom = ![100.0, 200.0, 400.0].contains(_gpsTargetDistance);
-    return GestureDetector(
-      onTap: () => _showCustomDistanceDialog(isDark),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isCustom
-              ? const Color(0xFF4CAF50).withOpacity(0.2)
-              : (isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5)),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isCustom
-                ? const Color(0xFF4CAF50)
-                : (isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0)),
-            width: isCustom ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              isCustom ? '${_gpsTargetDistance.toInt()}m' : 'カスタム',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: isCustom ? FontWeight.w600 : FontWeight.w500,
-                color: isCustom
-                    ? const Color(0xFF4CAF50)
-                    : (isDark ? Colors.white70 : Colors.black54),
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(
-              Icons.edit,
-              size: 14,
-              color: isCustom
-                  ? const Color(0xFF4CAF50)
-                  : (isDark ? Colors.white54 : Colors.black45),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showCustomDistanceDialog(bool isDark) {
-    final controller = TextEditingController(
-      text: _gpsTargetDistance.toInt().toString(),
-    );
+  // Show lag calibration dialog
+  void _showLagCalibrationDialog(BuildContext context, bool isDark) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF141B26) : Colors.white,
-        title: Text(
-          '計測距離を入力',
-          style: TextStyle(
-            color: isDark ? Colors.white : Colors.black87,
-          ),
-        ),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: '例: 150',
-            suffixText: 'm',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('キャンセル'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final value = double.tryParse(controller.text);
-              if (value != null && value >= 10 && value <= 10000) {
-                setState(() {
-                  _gpsTargetDistance = value;
-                });
-                widget.onGpsTargetDistanceChanged(value);
-                Navigator.pop(context);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('設定'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCourseTypeChip(
-    String value,
-    String label,
-    IconData icon,
-    bool isDark,
-  ) {
-    final isSelected = _gpsCourseType == value;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _gpsCourseType = value;
-        });
-        widget.onGpsCourseTypeChanged(value);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF4CAF50).withOpacity(0.2)
-              : (isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F5F5)),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected
-                ? const Color(0xFF4CAF50)
-                : (isDark ? const Color(0xFF2A3543) : const Color(0xFFE0E0E0)),
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 18,
-              color: isSelected
-                  ? const Color(0xFF4CAF50)
-                  : (isDark ? Colors.white70 : Colors.black54),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: isSelected
-                    ? const Color(0xFF4CAF50)
-                    : (isDark ? Colors.white70 : Colors.black54),
-              ),
-            ),
-          ],
-        ),
+      barrierDismissible: false,
+      builder: (dialogContext) => _LagCalibrationDialog(
+        isDark: isDark,
+        onCalibrated: (measuredLag) {
+          setState(() {
+            _lagCompensation = measuredLag.clamp(0.0, 1.0);
+            _lagController.text = _lagCompensation.toStringAsFixed(2);
+          });
+          widget.onLagCompensationChanged(_lagCompensation);
+        },
       ),
     );
   }
@@ -11172,35 +10249,6 @@ class _SettingsPageState extends State<SettingsPage> {
                                         ],
                                       ),
                                     ),
-                                    PopupMenuItem<String>(
-                                      value: 'gps_sensor',
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.gps_fixed,
-                                            size: 18,
-                                            color:
-                                                _triggerMethod == 'gps_sensor'
-                                                ? const Color(0xFF4CAF50)
-                                                : defaultIconColor,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            'GPS＆センサー',
-                                            style: TextStyle(
-                                              fontWeight:
-                                                  _triggerMethod == 'gps_sensor'
-                                                  ? FontWeight.w600
-                                                  : FontWeight.normal,
-                                              color:
-                                                  _triggerMethod == 'gps_sensor'
-                                                  ? const Color(0xFF4CAF50)
-                                                  : defaultTextColor,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
                                   ];
                                 },
                                 child: Builder(
@@ -11208,21 +10256,15 @@ class _SettingsPageState extends State<SettingsPage> {
                                     final accentColor =
                                         _triggerMethod == 'tap'
                                         ? const Color(0xFF00BCD4)
-                                        : (_triggerMethod == 'hardware_button'
-                                            ? const Color(0xFFFF9800)
-                                            : const Color(0xFF4CAF50));
+                                        : const Color(0xFFFF9800);
                                     final triggerIcon =
                                         _triggerMethod == 'tap'
                                         ? Icons.touch_app
-                                        : (_triggerMethod == 'hardware_button'
-                                            ? Icons.smart_button
-                                            : Icons.gps_fixed);
+                                        : Icons.smart_button;
                                     final triggerLabel =
                                         _triggerMethod == 'tap'
                                         ? 'タップ'
-                                        : (_triggerMethod == 'hardware_button'
-                                            ? 'ボタン'
-                                            : 'GPS＆センサー');
+                                        : 'ボタン';
                                     return Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 12,
@@ -11298,24 +10340,17 @@ class _SettingsPageState extends State<SettingsPage> {
                             ],
                           ),
                           Text(
-                            'ONの場合、GPS・センサーで速度やケイデンスなどの詳細データを取得します',
+                            'ONの場合、GPSで速度などの詳細データを取得します',
                             style: TextStyle(
                               fontSize: 11,
                               color: isDark ? Colors.white54 : Colors.black45,
                             ),
                           ),
                         ],
-                        // GPS trigger specific settings (distance, course type)
+                        // Calibration countdown (when GPS will be used for detailed info)
                         if ((_measurementTarget == 'goal' ||
                             _measurementTarget == 'goal_and_reaction') &&
-                            _triggerMethod == 'gps_sensor') ...[
-                          const SizedBox(height: 16),
-                          _buildGpsTriggerSettings(isDark),
-                        ],
-                        // Calibration countdown (when GPS/sensors will be used)
-                        if ((_measurementTarget == 'goal' ||
-                            _measurementTarget == 'goal_and_reaction') &&
-                            (_triggerMethod == 'gps_sensor' || _detailedInfoEnabled)) ...[
+                            _detailedInfoEnabled) ...[
                           const SizedBox(height: 16),
                           _buildCalibrationCountdownSetting(isDark),
                         ],
@@ -11343,11 +10378,9 @@ class _SettingsPageState extends State<SettingsPage> {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
-                                    _triggerMethod == 'gps_sensor'
-                                        ? '指定した距離に達すると自動的に計測が停止します。'
-                                        : (_triggerMethod == 'tap'
-                                            ? '計測中に画面をタップすると計測が停止します。'
-                                            : '計測中にイヤホンボタン、Bluetoothリモコン、または音量ボタンで停止できます。'),
+                                    _triggerMethod == 'tap'
+                                        ? '計測中に画面をタップすると計測が停止します。'
+                                        : '計測中にイヤホンボタン、Bluetoothリモコン、または音量ボタンで停止できます。',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: isDark
@@ -11359,174 +10392,223 @@ class _SettingsPageState extends State<SettingsPage> {
                               ],
                             ),
                           ),
+                        ],
+                        // Lag compensation settings (only for hardware_button trigger)
+                        if (_triggerMethod == 'hardware_button') ...[
                           const SizedBox(height: 16),
-                          Text(
-                            'ラグを考慮',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: isDark ? Colors.white70 : Colors.black54,
-                            ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'ラグを考慮',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: isDark ? Colors.white70 : Colors.black54,
+                                ),
+                              ),
+                              Switch(
+                                value: _lagEnabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _lagEnabled = value;
+                                    if (!value) {
+                                      _lagCompensation = 0.0;
+                                      _lagController.text = '0.00';
+                                      widget.onLagCompensationChanged(0.0);
+                                    }
+                                  });
+                                },
+                                activeColor: const Color(0xFF00BCD4),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 4),
                           Text(
-                            'トリガーの遅延を補正します（0〜1秒）',
+                            'ボタン入力からアプリ処理までの遅延を補正します',
                             style: TextStyle(
-                              fontSize: 12,
+                              fontSize: 11,
                               color: isDark ? Colors.white54 : Colors.black45,
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: SliderTheme(
-                                  data: SliderTheme.of(context).copyWith(
-                                    activeTrackColor: const Color(0xFF00BCD4),
-                                    inactiveTrackColor: isDark
-                                        ? const Color(0xFF1A2332)
-                                        : const Color(0xFFE0E0E0),
-                                    thumbColor: const Color(0xFF00BCD4),
-                                    overlayColor: const Color(
-                                      0xFF00BCD4,
-                                    ).withOpacity(0.2),
-                                    trackHeight: 4.0,
-                                    activeTickMarkColor: Colors.transparent,
-                                    inactiveTickMarkColor: Colors.transparent,
+                          if (_lagEnabled) ...[
+                            const SizedBox(height: 12),
+                            // Lag calibration button
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () => _showLagCalibrationDialog(context, isDark),
+                                icon: const Icon(Icons.speed, size: 18),
+                                label: const Text('ラグ計測'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF00BCD4),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                  child: Slider(
-                                    value: _lagCompensation,
-                                    min: 0.0,
-                                    max: 1.0,
-                                    divisions: 100,
-                                    onChanged: (value) {
-                                      setState(() => _lagCompensation = value);
-                                      widget.onLagCompensationChanged(value);
-                                      if (_lagFocusNode.hasFocus)
-                                        _lagFocusNode.unfocus();
-                                      _lagController.text = value
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'ラグ補正値（0〜1秒）',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? Colors.white54 : Colors.black45,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: SliderTheme(
+                                    data: SliderTheme.of(context).copyWith(
+                                      activeTrackColor: const Color(0xFF00BCD4),
+                                      inactiveTrackColor: isDark
+                                          ? const Color(0xFF1A2332)
+                                          : const Color(0xFFE0E0E0),
+                                      thumbColor: const Color(0xFF00BCD4),
+                                      overlayColor: const Color(
+                                        0xFF00BCD4,
+                                      ).withOpacity(0.2),
+                                      trackHeight: 4.0,
+                                      activeTickMarkColor: Colors.transparent,
+                                      inactiveTickMarkColor: Colors.transparent,
+                                    ),
+                                    child: Slider(
+                                      value: _lagCompensation,
+                                      min: 0.0,
+                                      max: 1.0,
+                                      divisions: 100,
+                                      onChanged: (value) {
+                                        setState(() => _lagCompensation = value);
+                                        widget.onLagCompensationChanged(value);
+                                        if (_lagFocusNode.hasFocus)
+                                          _lagFocusNode.unfocus();
+                                        _lagController.text = value
+                                            .toStringAsFixed(2);
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                SizedBox(
+                                  width: 70,
+                                  child: TextField(
+                                    controller: _lagController,
+                                    focusNode: _lagFocusNode,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        vertical: 10,
+                                        horizontal: 8,
+                                      ),
+                                      suffixText: '秒',
+                                      suffixStyle: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark
+                                            ? Colors.white54
+                                            : Colors.black45,
+                                      ),
+                                      filled: true,
+                                      fillColor: isDark
+                                          ? const Color(0xFF1A2332)
+                                          : const Color(0xFFF0F0F0),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: BorderSide(
+                                          color: isDark
+                                              ? const Color(0xFF2A3543)
+                                              : const Color(0xFFD0D0D0),
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: BorderSide(
+                                          color: isDark
+                                              ? const Color(0xFF2A3543)
+                                              : const Color(0xFFD0D0D0),
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: const BorderSide(
+                                          color: Color(0xFF00BCD4),
+                                          width: 2,
+                                        ),
+                                      ),
+                                    ),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp(r'^\d*\.?\d{0,2}'),
+                                      ),
+                                    ],
+                                    onSubmitted: (value) {
+                                      final trimmed = value.trim();
+                                      double newValue;
+                                      if (trimmed.isEmpty) {
+                                        newValue = _lagCompensation;
+                                      } else {
+                                        final parsed = double.tryParse(trimmed);
+                                        newValue = parsed != null
+                                            ? parsed.clamp(0.0, 1.0)
+                                            : _lagCompensation;
+                                      }
+                                      setState(() => _lagCompensation = newValue);
+                                      widget.onLagCompensationChanged(newValue);
+                                      _lagController.text = newValue
                                           .toStringAsFixed(2);
                                     },
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              SizedBox(
-                                width: 70,
-                                child: TextField(
-                                  controller: _lagController,
-                                  focusNode: _lagFocusNode,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark
-                                        ? Colors.white
-                                        : Colors.black87,
+                              ],
+                            ),
+                            if (_lagCompensation > 0) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF00BCD4).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: const Color(
+                                      0xFF00BCD4,
+                                    ).withOpacity(0.3),
                                   ),
-                                  decoration: InputDecoration(
-                                    isDense: true,
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      vertical: 10,
-                                      horizontal: 8,
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.timer,
+                                      size: 16,
+                                      color: Color(0xFF00BCD4),
                                     ),
-                                    suffixText: '秒',
-                                    suffixStyle: TextStyle(
-                                      fontSize: 12,
-                                      color: isDark
-                                          ? Colors.white54
-                                          : Colors.black45,
-                                    ),
-                                    filled: true,
-                                    fillColor: isDark
-                                        ? const Color(0xFF1A2332)
-                                        : const Color(0xFFF0F0F0),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                      borderSide: BorderSide(
-                                        color: isDark
-                                            ? const Color(0xFF2A3543)
-                                            : const Color(0xFFD0D0D0),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        '計測終了時、タイムから${_lagCompensation.toStringAsFixed(2)}秒を差し引きます',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF00BCD4),
+                                        ),
                                       ),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                      borderSide: BorderSide(
-                                        color: isDark
-                                            ? const Color(0xFF2A3543)
-                                            : const Color(0xFFD0D0D0),
-                                      ),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                      borderSide: const BorderSide(
-                                        color: Color(0xFF00BCD4),
-                                        width: 2,
-                                      ),
-                                    ),
-                                  ),
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'^\d*\.?\d{0,2}'),
                                     ),
                                   ],
-                                  onSubmitted: (value) {
-                                    final trimmed = value.trim();
-                                    double newValue;
-                                    if (trimmed.isEmpty) {
-                                      newValue = _lagCompensation;
-                                    } else {
-                                      final parsed = double.tryParse(trimmed);
-                                      newValue = parsed != null
-                                          ? parsed.clamp(0.0, 1.0)
-                                          : _lagCompensation;
-                                    }
-                                    setState(() => _lagCompensation = newValue);
-                                    widget.onLagCompensationChanged(newValue);
-                                    _lagController.text = newValue
-                                        .toStringAsFixed(2);
-                                  },
                                 ),
                               ),
                             ],
-                          ),
-                          if (_lagCompensation > 0) ...[
-                            const SizedBox(height: 12),
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF00BCD4).withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: const Color(
-                                    0xFF00BCD4,
-                                  ).withOpacity(0.3),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.timer,
-                                    size: 16,
-                                    color: Color(0xFF00BCD4),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      '計測終了時、タイムから${_lagCompensation.toStringAsFixed(2)}秒を差し引きます',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Color(0xFF00BCD4),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
                           ],
                         ],
                       ],
