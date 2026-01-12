@@ -2484,11 +2484,11 @@ class _StartCallHomePageState extends State<StartCallHomePage>
         final finalSpeed = topSpeed - 0.5 - random.nextDouble() * 1.5;
         final averageSpeed = distance / time!;
 
-        // Generate speed profile (10m intervals)
+        // Generate speed profile (5m intervals for more detail)
         final speedProfile = <Map<String, dynamic>>[];
-        final numPoints = (distance / 10).round();
+        final numPoints = (distance / 5).round();
         for (int j = 0; j <= numPoints; j++) {
-          final d = j * 10.0;
+          final d = j * 5.0;
           double speed;
           if (d == 0) {
             speed = 0;
@@ -2505,17 +2505,8 @@ class _StartCallHomePageState extends State<StartCallHomePage>
           speedProfile.add({'distance': d, 'speed': double.parse(speed.toStringAsFixed(2))});
         }
 
-        // Generate track points (simple straight line with slight variation)
-        final trackPoints = <Map<String, dynamic>>[];
-        final startLat = 35.6762 + random.nextDouble() * 0.01;
-        final startLon = 139.6503 + random.nextDouble() * 0.01;
-        final direction = random.nextDouble() * 2 * pi;
-        for (int j = 0; j <= numPoints; j++) {
-          final d = j * 10.0;
-          final lat = startLat + (d / 111000) * cos(direction) + (random.nextDouble() - 0.5) * 0.00001;
-          final lon = startLon + (d / 111000) * sin(direction) + (random.nextDouble() - 0.5) * 0.00001;
-          trackPoints.add({'lat': lat, 'lon': lon, 't': date.millisecondsSinceEpoch + (d / averageSpeed * 1000).round()});
-        }
+        // GPS update count (realistic based on distance and time)
+        final gpsUpdateCount = (time! * 1).round() + random.nextInt(5); // ~1 update per second
 
         gpsData = {
           'distance': distance,
@@ -2526,15 +2517,16 @@ class _StartCallHomePageState extends State<StartCallHomePage>
           'averageSpeed': double.parse(averageSpeed.toStringAsFixed(2)),
           'estimatedAccuracy': 0.05 + random.nextDouble() * 0.1,
           'speedProfile': speedProfile,
-          'trackPoints': trackPoints,
+          'gpsUpdateCount': gpsUpdateCount,
         };
       }
 
-      // Generate memo based on measurement data
+      // Generate memo based on measurement data (using km/h)
       if (memo.isEmpty && gpsData != null) {
         final dist = gpsData['distance'] as double;
         final topSpd = gpsData['topSpeed'] as double;
-        memo = '${dist.toInt()}m走 / 最高速度: ${topSpd.toStringAsFixed(1)}m/s';
+        final topSpdKmh = topSpd * 3.6; // Convert to km/h
+        memo = '${dist.toInt()}m走 / 最高速度: ${topSpdKmh.toStringAsFixed(1)}km/h';
       }
 
       // Add "詳細あり" tag when gpsData is present
@@ -6735,6 +6727,17 @@ class _LogEditPageState extends State<LogEditPage>
   // Chart display mode: 'distance' or 'time'
   String _chartMode = 'distance';
 
+  // Speed unit: 'km/h' (default) or 'm/s'
+  String _speedUnit = 'km/h';
+
+  // Convert speed from m/s to display unit
+  double _convertSpeed(double speedMs) {
+    return _speedUnit == 'km/h' ? speedMs * 3.6 : speedMs;
+  }
+
+  // Get speed unit label
+  String get _speedUnitLabel => _speedUnit;
+
   bool get hasGpsData => widget.gpsData != null;
 
   @override
@@ -6995,16 +6998,62 @@ class _LogEditPageState extends State<LogEditPage>
     );
   }
 
+  // Build speed unit toggle button
+  Widget _buildSpeedUnitToggle(bool isDark) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _speedUnit = _speedUnit == 'km/h' ? 'm/s' : 'km/h';
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF3A3A3A) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: const Color(0xFF00BCD4).withAlpha(150),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.swap_horiz,
+              size: 14,
+              color: const Color(0xFF00BCD4),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              _speedUnit,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF00BCD4),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // Build GPS stats card
   Widget _buildGpsStatsCard(bool isDark) {
     final gpsData = widget.gpsData!;
     final distance = (gpsData['distance'] as num?)?.toDouble() ?? 0;
-    final initialSpeed = (gpsData['initialSpeed'] as num?)?.toDouble() ?? 0;
-    final finalSpeed = (gpsData['finalSpeed'] as num?)?.toDouble() ?? 0;
-    final topSpeed = (gpsData['topSpeed'] as num?)?.toDouble() ?? 0;
-    final averageSpeed = (gpsData['averageSpeed'] as num?)?.toDouble() ?? 0;
+    final initialSpeedMs = (gpsData['initialSpeed'] as num?)?.toDouble() ?? 0;
+    final finalSpeedMs = (gpsData['finalSpeed'] as num?)?.toDouble() ?? 0;
+    final topSpeedMs = (gpsData['topSpeed'] as num?)?.toDouble() ?? 0;
+    final averageSpeedMs = (gpsData['averageSpeed'] as num?)?.toDouble() ?? 0;
     final courseType = gpsData['courseType'] as String? ?? 'straight';
     final gpsUpdateCount = (gpsData['gpsUpdateCount'] as num?)?.toInt() ?? 0;
+
+    // Convert speeds to display unit
+    final initialSpeed = _convertSpeed(initialSpeedMs);
+    final finalSpeed = _convertSpeed(finalSpeedMs);
+    final topSpeed = _convertSpeed(topSpeedMs);
+    final averageSpeed = _convertSpeed(averageSpeedMs);
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -7032,6 +7081,8 @@ class _LogEditPageState extends State<LogEditPage>
                   color: isDark ? Colors.white : Colors.black87,
                 ),
               ),
+              const Spacer(),
+              _buildSpeedUnitToggle(isDark),
             ],
           ),
           const SizedBox(height: 16),
@@ -7047,13 +7098,13 @@ class _LogEditPageState extends State<LogEditPage>
                   courseType == 'straight' ? '直線' : 'トラック',
                   courseType == 'straight' ? Icons.straighten : Icons.stadium,
                   isDark),
-              _buildStatItem('初速', '${initialSpeed.toStringAsFixed(1)} m/s',
+              _buildStatItem('初速', '${initialSpeed.toStringAsFixed(1)} $_speedUnitLabel',
                   Icons.play_arrow, isDark),
-              _buildStatItem('終速', '${finalSpeed.toStringAsFixed(1)} m/s',
+              _buildStatItem('終速', '${finalSpeed.toStringAsFixed(1)} $_speedUnitLabel',
                   Icons.stop, isDark),
-              _buildStatItem('最高速度', '${topSpeed.toStringAsFixed(1)} m/s',
+              _buildStatItem('最高速度', '${topSpeed.toStringAsFixed(1)} $_speedUnitLabel',
                   Icons.speed, isDark),
-              _buildStatItem('平均速度', '${averageSpeed.toStringAsFixed(1)} m/s',
+              _buildStatItem('平均速度', '${averageSpeed.toStringAsFixed(1)} $_speedUnitLabel',
                   Icons.av_timer, isDark),
               _buildStatItem('GPS更新', '$gpsUpdateCount回',
                   Icons.update, isDark),
@@ -7145,7 +7196,10 @@ class _LogEditPageState extends State<LogEditPage>
     }
 
     final isTimeMode = _chartMode == 'time';
-    final chartData = isTimeMode ? timeProfile : distanceProfile;
+    final chartDataRaw = isTimeMode ? timeProfile : distanceProfile;
+
+    // Convert chart data to display unit
+    final chartData = chartDataRaw.map((s) => FlSpot(s.x, _convertSpeed(s.y))).toList();
 
     final maxSpeed = chartData.map((s) => s.y).reduce((a, b) => a > b ? a : b);
     final maxX = chartData.map((s) => s.x).reduce((a, b) => a > b ? a : b);
@@ -7186,8 +7240,8 @@ class _LogEditPageState extends State<LogEditPage>
                   ),
                   child: Text(
                     isTimeMode
-                        ? '${_touchedDistance!.toStringAsFixed(1)}秒: ${_touchedSpeed!.toStringAsFixed(1)} m/s'
-                        : '${_touchedDistance!.toInt()}m: ${_touchedSpeed!.toStringAsFixed(1)} m/s',
+                        ? '${_touchedDistance!.toStringAsFixed(1)}秒: ${_touchedSpeed!.toStringAsFixed(1)} $_speedUnitLabel'
+                        : '${_touchedDistance!.toInt()}m: ${_touchedSpeed!.toStringAsFixed(1)} $_speedUnitLabel',
                     style: const TextStyle(
                       color: Color(0xFFFFD700),
                       fontWeight: FontWeight.w600,
@@ -7274,7 +7328,7 @@ class _LogEditPageState extends State<LogEditPage>
                       gridData: FlGridData(
                         show: true,
                         drawVerticalLine: true,
-                        horizontalInterval: 2,
+                        horizontalInterval: _speedUnit == 'km/h' ? 10 : 2,
                         verticalInterval: effectiveMaxX / 5,
                         getDrawingHorizontalLine: (value) => FlLine(
                           color: isDark
@@ -7322,7 +7376,7 @@ class _LogEditPageState extends State<LogEditPage>
                         ),
                         leftTitles: AxisTitles(
                           axisNameWidget: Text(
-                            '速度 (m/s)',
+                            '速度 ($_speedUnitLabel)',
                             style: TextStyle(
                               fontSize: 11,
                               color: isDark ? Colors.white54 : Colors.black45,
@@ -7331,7 +7385,7 @@ class _LogEditPageState extends State<LogEditPage>
                           sideTitles: SideTitles(
                             showTitles: true,
                             reservedSize: 40,
-                            interval: 2,
+                            interval: _speedUnit == 'km/h' ? 10 : 2,
                             getTitlesWidget: (value, meta) {
                               return Text(
                                 value.toInt().toString(),
@@ -7466,103 +7520,7 @@ class _LogEditPageState extends State<LogEditPage>
     );
   }
 
-  // Build track map (trajectory visualization)
-  Widget _buildTrackMap(bool isDark) {
-    final gpsData = widget.gpsData!;
-    final trackPointsRaw = gpsData['trackPoints'] as List?;
-    if (trackPointsRaw == null || trackPointsRaw.length < 2) {
-      return Container(
-        height: 200,
-        margin: const EdgeInsets.all(16),
-        alignment: Alignment.center,
-        child: Text(
-          '軌跡データがありません',
-          style: TextStyle(color: isDark ? Colors.white54 : Colors.black45),
-        ),
-      );
-    }
-
-    final trackPoints = trackPointsRaw.map((item) {
-      final map = item as Map<String, dynamic>;
-      return Offset(
-        (map['lat'] as num).toDouble(),
-        (map['lon'] as num).toDouble(),
-      );
-    }).toList();
-
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF5F5F5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.route, color: const Color(0xFF00BCD4), size: 20),
-              const SizedBox(width: 8),
-              Text(
-                '走行軌跡',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 200,
-            child: CustomPaint(
-              size: const Size(double.infinity, 200),
-              painter: TrackMapPainter(
-                points: trackPoints,
-                isDark: isDark,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildLegendItem('スタート', Colors.green, isDark),
-              const SizedBox(width: 16),
-              _buildLegendItem('ゴール', Colors.red, isDark),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLegendItem(String label, Color color, bool isDark) {
-    return Row(
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            color: isDark ? Colors.white54 : Colors.black45,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // _buildCadenceChart and _buildVerticalOscillationChart removed (stride data not collected)
+  // Track map removed
 
   // Build the graph tab content
   Widget _buildGraphTab(bool isDark, String dateStr) {
@@ -7574,8 +7532,6 @@ class _LogEditPageState extends State<LogEditPage>
           const SizedBox(height: 16),
           _buildGpsStatsCard(isDark),
           _buildSpeedDistanceChart(isDark),
-          const SizedBox(height: 16),
-          _buildTrackMap(isDark),
           const SizedBox(height: 32),
         ],
       ),
@@ -7641,117 +7597,6 @@ class _LogEditPageState extends State<LogEditPage>
       },
     );
   }
-}
-
-// Custom painter for track map visualization
-class TrackMapPainter extends CustomPainter {
-  final List<Offset> points;
-  final bool isDark;
-
-  TrackMapPainter({required this.points, required this.isDark});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (points.length < 2) return;
-
-    // Find bounds
-    double minLat = points.first.dx;
-    double maxLat = points.first.dx;
-    double minLon = points.first.dy;
-    double maxLon = points.first.dy;
-
-    for (final p in points) {
-      if (p.dx < minLat) minLat = p.dx;
-      if (p.dx > maxLat) maxLat = p.dx;
-      if (p.dy < minLon) minLon = p.dy;
-      if (p.dy > maxLon) maxLon = p.dy;
-    }
-
-    // Add padding
-    final latRange = maxLat - minLat;
-    final lonRange = maxLon - minLon;
-    final padding = 0.1;
-    minLat -= latRange * padding;
-    maxLat += latRange * padding;
-    minLon -= lonRange * padding;
-    maxLon += lonRange * padding;
-
-    // Ensure minimum range to avoid division by zero
-    final effectiveLatRange = (maxLat - minLat) > 0.00001 ? (maxLat - minLat) : 0.00001;
-    final effectiveLonRange = (maxLon - minLon) > 0.00001 ? (maxLon - minLon) : 0.00001;
-
-    // Convert to screen coordinates
-    Offset toScreen(Offset gps) {
-      final x = (gps.dy - minLon) / effectiveLonRange * size.width;
-      final y = size.height - (gps.dx - minLat) / effectiveLatRange * size.height;
-      return Offset(x, y);
-    }
-
-    // Draw track line
-    final trackPaint = Paint()
-      ..color = const Color(0xFF00BCD4)
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final path = Path();
-    final firstScreen = toScreen(points.first);
-    path.moveTo(firstScreen.dx, firstScreen.dy);
-
-    for (int i = 1; i < points.length; i++) {
-      final screen = toScreen(points[i]);
-      path.lineTo(screen.dx, screen.dy);
-    }
-
-    canvas.drawPath(path, trackPaint);
-
-    // Draw start point (green)
-    final startPaint = Paint()
-      ..color = Colors.green
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(firstScreen, 8, startPaint);
-
-    // Draw end point (red)
-    final endScreen = toScreen(points.last);
-    final endPaint = Paint()
-      ..color = Colors.red
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(endScreen, 8, endPaint);
-
-    // Draw direction arrows along the path
-    if (points.length >= 4) {
-      final arrowPaint = Paint()
-        ..color = isDark ? Colors.white54 : Colors.black45
-        ..strokeWidth = 2
-        ..style = PaintingStyle.stroke;
-
-      for (int i = points.length ~/ 4; i < points.length; i += points.length ~/ 4) {
-        if (i > 0 && i < points.length - 1) {
-          final current = toScreen(points[i]);
-          final prev = toScreen(points[i - 1]);
-          final angle = atan2(current.dy - prev.dy, current.dx - prev.dx);
-
-          // Draw small arrow
-          final arrowSize = 6.0;
-          final arrowPath = Path();
-          arrowPath.moveTo(
-            current.dx - arrowSize * cos(angle - 0.5),
-            current.dy - arrowSize * sin(angle - 0.5),
-          );
-          arrowPath.lineTo(current.dx, current.dy);
-          arrowPath.lineTo(
-            current.dx - arrowSize * cos(angle + 0.5),
-            current.dy - arrowSize * sin(angle + 0.5),
-          );
-          canvas.drawPath(arrowPath, arrowPaint);
-        }
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // Log Comparison Page - compare multiple GPS measurement logs
