@@ -41,6 +41,10 @@ dependencies:
   wakelock_plus: ^1.2.8
   hardware_button_listener: ^0.0.1
   sensors_plus: ^5.0.1
+  geolocator: ^11.0.0
+  permission_handler: ^11.0.0
+  vector_math: ^2.1.4
+  fl_chart: ^0.66.0
 
 dev_dependencies:
   flutter_test:
