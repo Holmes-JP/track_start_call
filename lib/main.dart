@@ -233,8 +233,15 @@ class StartCallApp extends StatelessWidget {
       useMaterial3: true,
     );
 
+    // Noto Sans JP を日本語フォールバックとして適用
+    final notoSansJp = GoogleFonts.notoSansJp();
+    final spaceGroteskTheme = GoogleFonts.spaceGroteskTextTheme(baseTheme.textTheme);
+    final japaneseTextTheme = spaceGroteskTheme.apply(
+      fontFamilyFallback: [notoSansJp.fontFamily!],
+    );
+
     return baseTheme.copyWith(
-      textTheme: GoogleFonts.spaceGroteskTextTheme(baseTheme.textTheme),
+      textTheme: japaneseTextTheme,
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
