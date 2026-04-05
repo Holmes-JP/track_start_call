@@ -1441,87 +1441,6 @@ class _StartCallHomePageState extends State<StartCallHomePage>
     await prefs.setString('time_logs', '[]');
   }
 
-  // Debug: Add 50 random test records
-  Future<void> _addTestRecords() async {
-    final prefs = await SharedPreferences.getInstance();
-    final logsJson = prefs.getString('time_logs') ?? '[]';
-    final logs = List<Map<String, dynamic>>.from(jsonDecode(logsJson));
-
-    final now = DateTime.now();
-    final random = Random();
-
-    for (int i = 0; i < 50; i++) {
-      // Random date between 2 years ago and now
-      final daysAgo = random.nextInt(730); // 0-730 days ago (2 years)
-      final date = now.subtract(
-        Duration(
-          days: daysAgo,
-          hours: random.nextInt(24),
-          minutes: random.nextInt(60),
-          seconds: random.nextInt(60),
-        ),
-      );
-
-      // Random measurement type: 0=goal only, 1=reaction only, 2=goal+reaction
-      final measurementType = random.nextInt(3);
-
-      // Build tags based on measurement type
-      final List<String> tags = [];
-      double? time;
-      double? reactionTime;
-
-      if (measurementType == 0) {
-        // Goal only
-        tags.add('ゴール');
-        time = 8.0 + random.nextDouble() * 7.0; // 8.0-15.0 seconds
-      } else if (measurementType == 1) {
-        // Reaction only
-        tags.add('リアクション');
-        reactionTime = 0.1 + random.nextDouble() * 0.4; // 0.1-0.5 seconds
-      } else if (measurementType == 2) {
-        // Goal + Reaction
-        tags.add('ゴール');
-        tags.add('リアクション');
-        time = 8.0 + random.nextDouble() * 7.0;
-        reactionTime = 0.1 + random.nextDouble() * 0.4;
-      }
-
-      final record = <String, dynamic>{
-        'date': date.toIso8601String(),
-        'title': '[テスト用] 記録 ${i + 1}',
-        'memo': 'テスト用の記録です',
-        'tags': tags,
-        'isFlying': false,
-      };
-
-      if (time != null) {
-        record['time'] = double.parse(time.toStringAsFixed(2));
-      }
-      if (reactionTime != null) {
-        record['reactionTime'] = double.parse(reactionTime.toStringAsFixed(3));
-      }
-
-      logs.add(record);
-    }
-
-    await prefs.setString('time_logs', jsonEncode(logs));
-  }
-
-  // Debug: Delete all test records
-  Future<void> _deleteTestRecords() async {
-    final prefs = await SharedPreferences.getInstance();
-    final logsJson = prefs.getString('time_logs') ?? '[]';
-    final logs = List<Map<String, dynamic>>.from(jsonDecode(logsJson));
-
-    // Remove all records with title starting with "[テスト用]"
-    logs.removeWhere((log) {
-      final title = log['title'] as String? ?? '';
-      return title.startsWith('[テスト用]');
-    });
-
-    await prefs.setString('time_logs', jsonEncode(logs));
-  }
-
   // Reset all settings to defaults
   Future<void> _resetSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -1982,8 +1901,6 @@ class _StartCallHomePageState extends State<StartCallHomePage>
             });
           },
           openTimeLogsPage: _openTimeLogsPage,
-          addTestRecords: _addTestRecords,
-          deleteTestRecords: _deleteTestRecords,
           resetSettings: _resetSettings,
         ),
       ),
@@ -5765,8 +5682,6 @@ class SettingsPage extends StatefulWidget {
   final ValueChanged<String> onSetAudioChanged;
   final ValueChanged<String> onGoAudioChanged;
   final VoidCallback openTimeLogsPage;
-  final Future<void> Function() addTestRecords;
-  final Future<void> Function() deleteTestRecords;
   final Future<void> Function() resetSettings;
 
   const SettingsPage({
@@ -5812,8 +5727,6 @@ class SettingsPage extends StatefulWidget {
     required this.onSetAudioChanged,
     required this.onGoAudioChanged,
     required this.openTimeLogsPage,
-    required this.addTestRecords,
-    required this.deleteTestRecords,
     required this.resetSettings,
   });
 
@@ -7550,137 +7463,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                // Debug section
-                Padding(
-                  padding: const EdgeInsets.only(left: 4, bottom: 8),
-                  child: Text(
-                    'デバッグ',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white54 : Colors.black45,
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 4, bottom: 12),
-                  child: Text(
-                    'この設定は早期アクセス版のデバッグのための機能です。\n正式リリース時にはこの機能は削除します。\nカレンダーの動作検証などにお使いください。',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: isDark ? Colors.white38 : Colors.black38,
-                    ),
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () async {
-                    await widget.addTestRecords();
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('50個のテスト用記録を追加しました'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 16,
-                      horizontal: 20,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF141B26) : Colors.white,
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(16),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: isDark
-                              ? const Color(0xFF2A3543)
-                              : const Color(0xFFE0E0E0),
-                          spreadRadius: 1,
-                          blurRadius: 0,
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.add_circle_outline,
-                          color: Colors.orange,
-                          size: 24,
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text(
-                            'テスト用の記録を追加（50件）',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
-                              color: isDark ? Colors.white : Colors.black87,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () async {
-                    await widget.deleteTestRecords();
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('テスト用の記録を削除しました'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 16,
-                      horizontal: 20,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF141B26) : Colors.white,
-                      borderRadius: const BorderRadius.vertical(
-                        bottom: Radius.circular(16),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: isDark
-                              ? const Color(0xFF2A3543)
-                              : const Color(0xFFE0E0E0),
-                          spreadRadius: 1,
-                          blurRadius: 0,
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.delete_outline,
-                          color: Colors.red,
-                          size: 24,
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text(
-                            'テスト用の記録を消す',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
-                              color: isDark ? Colors.white : Colors.black87,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 32),
                 // Reset settings section
                 GestureDetector(
                   onTap: () async {
